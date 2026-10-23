@@ -1,0 +1,76 @@
+name: Sync from Perun
+
+# Copies each Perun for Obsidian release from noiseweaver/Perun into this repository: the source at
+# that release (so the code Obsidian's review scans is here), manifest.json at the top, and a
+# release with the same tag and the same main.js, manifest.json and styles.css. The files were
+# already built and tested in real Obsidian by Perun's Release Obsidian plugin workflow, so nothing
+# is rebuilt here. Runs every hour, or by hand (Actions > Sync from Perun > Run workflow).
+# README.md and .github/ belong to this repository and are never overwritten.
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Perun release to copy, like 1.0.1 (empty: the latest)'
+        required: false
+        default: ''
+
+concurrency:
+  group: sync
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM: noiseweaver/Perun
+    steps:
+      - uses: actions/checkout@v5
+      - name: Which release
+        id: tag
+        env:
+          WANTED: ${{ inputs.tag }}
+        run: |
+          tag="$WANTED"
+          [ -n "$tag" ] || tag=$(gh release view --repo "$UPSTREAM" --json tagName --jq .tagName)
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "$tag is already here"
+          else
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Copy the source at that release
+        if: steps.tag.outputs.tag != ''
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git clone --depth 1 --branch "$TAG" "https://github.com/$UPSTREAM.git" "$RUNNER_TEMP/perun"
+          upstream_sha=$(git -C "$RUNNER_TEMP/perun" rev-parse HEAD)
+          echo "UPSTREAM_SHA=$upstream_sha" >> "$GITHUB_ENV"
+          # replace everything but this repository's own README.md and .github/
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .github ! -name README.md -exec rm -rf {} +
+          tar -C "$RUNNER_TEMP/perun" --exclude=./.git --exclude=./.github --exclude=./README.md -cf - . | tar -xf -
+          gh release download "$TAG" --repo "$UPSTREAM" --dir "$RUNNER_TEMP/assets"
+          cp "$RUNNER_TEMP/assets/manifest.json" manifest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          # the upstream CircuitJS1 submodule at the commit Perun pins (the build reads its examples)
+          sub=$(git -C "$RUNNER_TEMP/perun" ls-tree HEAD reference/circuitjs1 | awk '{print $3}')
+          git update-index --add --cacheinfo "160000,$sub,reference/circuitjs1"
+          git commit -m "Perun for Obsidian $TAG" -m "Source of https://github.com/$UPSTREAM/tree/$upstream_sha"
+          git push
+      - name: Publish the release
+        if: steps.tag.outputs.tag != ''
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            "$RUNNER_TEMP/assets/main.js" "$RUNNER_TEMP/assets/manifest.json" "$RUNNER_TEMP/assets/styles.css" \
+            --repo "$GITHUB_REPOSITORY" --target "$(git rev-parse HEAD)" \
+            --title "Perun for Obsidian $TAG" \
+            --notes "The same files as [Perun $TAG](https://github.com/$UPSTREAM/releases/tag/$TAG), built and tested in Obsidian there. Source: $UPSTREAM@$UPSTREAM_SHA."
