@@ -4,12 +4,12 @@ name: Sync from Perun
 # that release (so the code Obsidian's review scans is here), manifest.json at the top, and a
 # release with the same tag and the same main.js, manifest.json and styles.css. The files were
 # already built and tested in real Obsidian by Perun's Release Obsidian plugin workflow, so nothing
-# is rebuilt here. Runs every hour, or by hand (Actions > Sync from Perun > Run workflow).
+# is rebuilt here. Runs once a day (04:23 UTC), or by hand (Actions > Sync from Perun > Run workflow).
 # README.md and .github/ belong to this repository and are never overwritten.
 
 on:
   schedule:
-    - cron: '23 * * * *'
+    - cron: '23 4 * * *'
   workflow_dispatch:
     inputs:
       tag:
