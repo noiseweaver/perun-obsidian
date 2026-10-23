@@ -27,8 +27,15 @@ circuits from CircuitJS1 open and run the same way.
   other note. Exported images and CSV files are saved into the vault next to it.
 - **Themes.** Circuits follow Obsidian's light and dark mode, or any of Perun's themes.
 
-It works on desktop and on Obsidian for iPhone, iPad and Android. It needs no account and no
-internet connection, and sends nothing anywhere.
+It works on desktop and on Obsidian for iPhone, iPad and Android. It needs no account and sends
+nothing anywhere.
+
+**Network use.** The editor's example circuits and its menus in other languages (about 1.7 MB) are
+kept out of the plugin itself. The first time a circuit file opens, the plugin downloads them once,
+as `perun-files.json`, from the release of its own version on
+[GitHub](https://github.com/noiseweaver/Perun/releases), and keeps them in its folder. Until then,
+or offline, the editor has no examples and its menus are in English. Nothing else goes over the
+network.
 
 ## Install
 

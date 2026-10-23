@@ -70,7 +70,7 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           gh release create "$TAG" \
-            "$RUNNER_TEMP/assets/main.js" "$RUNNER_TEMP/assets/manifest.json" "$RUNNER_TEMP/assets/styles.css" \
+            "$RUNNER_TEMP"/assets/* \
             --repo "$GITHUB_REPOSITORY" --target "$(git rev-parse HEAD)" \
             --title "Perun for Obsidian $TAG" \
             --notes "The same files as [Perun $TAG](https://github.com/$UPSTREAM/releases/tag/$TAG), built and tested in Obsidian there. Source: $UPSTREAM@$UPSTREAM_SHA."
