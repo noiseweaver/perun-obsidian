@@ -1,0 +1,48 @@
+{
+  "name": "@perun/app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "UI shell, editor, panels, scopes, theme editor.",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./embedConfig": "./src/embedConfig.ts",
+    "./sliders": "./src/sliders.ts",
+    "./settings": "./src/settings.ts",
+    "./drawing": "./src/drawing.ts",
+    "./stepClock": "./src/stepClock.ts"
+  },
+  "dependencies": {
+    "@perun/elements": "workspace:*",
+    "@perun/engine": "workspace:*",
+    "@perun/format": "workspace:*",
+    "@perun/render": "workspace:*",
+    "@perun/theme": "workspace:*",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/roboto": "^5.3.0",
+    "@radix-ui/react-context-menu": "^2.3.7",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-dropdown-menu": "^2.1.24",
+    "@radix-ui/react-popover": "^1.1.23",
+    "@radix-ui/react-select": "^2.3.7",
+    "@radix-ui/react-slider": "^1.4.7",
+    "@radix-ui/react-toggle": "^1.1.18",
+    "@radix-ui/react-tooltip": "^1.2.16",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zustand": "^5.0.15"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1"
+  }
+}

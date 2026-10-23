@@ -1,0 +1,4819 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * Material 3 styling for the UI chrome. Every color here is a theme token (themeCssVariables) or
+ * a mix of tokens; none are literals. The Material roles map onto the theme's ui keys:
+ *   surface              --ui-surface
+ *   surface container    --ui-surface-alt
+ *   on surface (variant) --ui-text (--ui-text-muted)
+ *   outline variant      --ui-border
+ *   primary / on primary --ui-accent / --ui-surface
+ *   error                --ui-danger
+ * Surface container tones above and below are mixed from those, and state layers are the
+ * content color at Material's 8 %, 10 % and 10 % (hover, focus, press) opacities.
+ */
+
+:root {
+  --md-surface-container-low: color-mix(in srgb, var(--ui-surface-alt) 50%, var(--ui-surface));
+  --md-surface-container-high: color-mix(in srgb, var(--ui-surface-alt) 92%, var(--ui-text));
+  --md-surface-container-highest: color-mix(in srgb, var(--ui-surface-alt) 86%, var(--ui-text));
+  --md-secondary-container: color-mix(in srgb, var(--ui-accent) 22%, var(--ui-surface-alt));
+  --md-error-container: color-mix(in srgb, var(--ui-danger) 22%, var(--ui-surface-alt));
+  /* the theme's style.shadows sets the strength and tint (shadowCssVariables) */
+  --md-shadow-strength: 50%;
+  --md-shadow-tint: 100%;
+  --md-shadow: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--ui-shadow) var(--md-shadow-tint), black) var(--md-shadow-strength),
+    transparent
+  );
+  --md-elevation-2:
+    0 1px 2px var(--md-shadow), 0 2px 6px 2px color-mix(in srgb, var(--md-shadow) 50%, transparent);
+  --md-elevation-3:
+    0 1px 3px var(--md-shadow), 0 4px 8px 3px color-mix(in srgb, var(--md-shadow) 50%, transparent);
+  --md-shape-xs: 4px;
+  --md-shape-s: 8px;
+  --md-shape-m: 12px;
+  --md-shape-l: 16px;
+  --md-shape-xl: 28px;
+  --md-shape-full: 999px;
+  --md-motion: cubic-bezier(0.2, 0, 0, 1);
+}
+
+* {
+  box-sizing: border-box;
+  /* scrollbars blend into the surface they scroll */
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ui-text-muted) 45%, transparent) transparent;
+}
+
+html,
+body,
+#root {
+  /* --app-height: installed on iPhone, where 100% falls short (pwa.ts) */
+  height: var(--app-height, 100%);
+  margin: 0;
+}
+
+body {
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  /* an app, not a page: a long press must not select text or open the browser's callout */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  /* no double-tap zoom of the interface (pageZoom.ts); the canvas sets its own touch-action */
+  touch-action: manipulation;
+}
+
+/* iPhone zooms the page into a focused text field set below 16px, and leaves it zoomed */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+.icon {
+  flex: none;
+  display: block;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* clear the notch and the home indicator; the status bar only matters installed (below) */
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  box-sizing: border-box;
+}
+
+/* installed on iPhone and iPad the page runs under the status bar. In a browser tab, or embedded
+   in another app's web view, the top inset can be non-zero while nothing covers the page, which
+   left an empty band above the app bar. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .app {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* installed on an iPhone held upright, iOS 26 frosts a band below the status bar: the app bar starts
+   under it (12px still showed the frost, 28px cleared it with room to spare), and the band shows the
+   app's background (pwa.ts sets the attribute) */
+@media (orientation: portrait) and (max-width: 600px) {
+  :root[data-ios-app] .app {
+    padding-top: calc(env(safe-area-inset-top) + 18px);
+  }
+}
+
+/* ---- state layers ------------------------------------------------------------------------- */
+
+.menu-trigger,
+.button,
+.icon-button {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.menu-trigger::before,
+.button::before,
+.icon-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 150ms var(--md-motion);
+}
+
+/* a touch screen keeps :hover on the last tapped button, which left it shaded */
+@media (hover: hover) {
+  .menu-trigger:hover::before,
+  .button:hover::before,
+  .icon-button:hover::before {
+    opacity: 0.08;
+  }
+}
+
+.menu-trigger:focus-visible::before,
+.button:focus-visible::before,
+.icon-button:focus-visible::before,
+.menu-trigger:active::before,
+.button:active::before,
+.icon-button:active::before,
+.menu-trigger[data-state='open']::before {
+  opacity: 0.1;
+}
+
+.menu-trigger:disabled::before,
+.button:disabled::before,
+.icon-button:disabled::before {
+  opacity: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+/* ---- top app bar -------------------------------------------------------------------------- */
+
+.app-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 64px;
+  padding: 8px 12px 8px 16px;
+  background: var(--ui-surface);
+}
+
+.app-bar-brand {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--md-shape-m);
+  background: var(--md-secondary-container);
+  color: var(--ui-accent);
+}
+
+.app-bar-title-row {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  /* a fixed slot, so the menus after it stay put whatever the name's length (a long name ends
+     in an ellipsis; the full name shows when renaming) */
+  width: clamp(140px, 12vw, 220px);
+  min-width: 0;
+  /* the title's own padding (hover and edit) brings its text to 8px from the logo */
+  margin: 0 8px 0 2px;
+}
+
+.app-bar-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 400;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* the title is a button that turns into a field to rename the circuit */
+.app-bar-title-button {
+  display: block;
+  max-width: 100%;
+  padding: 2px 6px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: transparent;
+  border: none;
+  border-radius: var(--md-shape-s);
+  cursor: text;
+}
+
+.app-bar-title-button:hover {
+  background: color-mix(in srgb, var(--ui-text) 8%, transparent);
+}
+
+.app-bar-title-input {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  font-family: inherit;
+  color: var(--ui-text);
+  background: var(--md-surface-container-high);
+  border: none;
+  border-radius: var(--md-shape-s);
+  outline: 2px solid var(--ui-accent);
+}
+
+/* changes not saved anywhere */
+.app-bar-unsaved {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ui-accent);
+}
+
+.app-bar > .icon-button,
+.app-bar-menus {
+  flex-shrink: 0;
+}
+
+.app-bar-menus {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* a menu: its icon and name (the name drops out on phones, below) */
+.menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px 0 12px;
+  font: inherit;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ui-text);
+  background: transparent;
+  border: none;
+  border-radius: var(--md-shape-full);
+  cursor: pointer;
+}
+
+.menu-trigger[data-state='open'] {
+  background: var(--md-secondary-container);
+}
+
+.menu-trigger-icon {
+  color: var(--ui-text-muted);
+}
+
+.menu-trigger[data-state='open'] .menu-trigger-icon {
+  color: var(--ui-accent);
+}
+
+.menu-trigger:disabled .menu-trigger-icon {
+  color: inherit;
+}
+
+.menu-trigger:disabled {
+  color: color-mix(in srgb, var(--ui-text) 38%, transparent);
+  cursor: default;
+}
+
+/* ---- menus -------------------------------------------------------------------------------- */
+
+.menu-content {
+  min-width: 200px;
+  max-width: 360px;
+  max-height: var(--radix-dropdown-menu-content-available-height);
+  overflow-y: auto;
+  padding: 8px 0;
+  background: var(--md-surface-container-high);
+  border-radius: var(--md-shape-xs);
+  box-shadow: var(--md-elevation-2);
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--ui-text);
+  z-index: 70;
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  animation: menu-in 150ms var(--md-motion);
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scaleY(0.9);
+  }
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 12px;
+  outline: none;
+  cursor: default;
+  user-select: none;
+}
+
+.menu-item[data-highlighted],
+.menu-item[data-state='open'] {
+  background: color-mix(in srgb, var(--ui-text) 8%, transparent);
+}
+
+.menu-item[data-highlighted]:focus-visible {
+  background: color-mix(in srgb, var(--ui-text) 10%, transparent);
+}
+
+/* the wheel's favorites in a row at the top of the empty-canvas menu */
+.menu-quick {
+  display: grid;
+  grid-template-columns: repeat(5, 44px);
+  justify-content: center;
+  gap: 2px;
+  padding: 0 8px;
+}
+
+.menu-quick-item {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 40px;
+  border-radius: var(--md-shape-full);
+  color: var(--ui-text-muted);
+  outline: none;
+  cursor: default;
+}
+
+.menu-quick-item[data-highlighted] {
+  color: var(--ui-text);
+  background: color-mix(in srgb, var(--ui-text) 10%, transparent);
+}
+
+.menu-quick-item canvas {
+  max-width: 40px;
+  max-height: 32px;
+}
+
+.menu-trailing {
+  margin-left: auto;
+  color: var(--ui-text-muted);
+}
+
+/* a submenu unfolded inside its menu on phones, where a side submenu would run off the screen */
+.menu-inline-group {
+  background: color-mix(in srgb, var(--ui-text) 4%, transparent);
+}
+
+.menu-inline-group .menu-item {
+  padding-left: 28px;
+}
+
+.menu-hint {
+  padding-left: 16px;
+  font-size: 12px;
+}
+
+.menu-check {
+  display: inline-flex;
+  width: 18px;
+  color: var(--ui-accent);
+}
+
+/* leading icon column of the context menu (also holds the check of a checkbox item) */
+.menu-icon {
+  display: inline-flex;
+  flex: none;
+  justify-content: center;
+  width: 20px;
+  color: var(--ui-text-muted);
+}
+
+.menu-icon.menu-check {
+  color: var(--ui-accent);
+}
+
+/* a disabled item was drawn like an enabled one; dim it as the app bar's disabled menus are */
+.menu-item[data-disabled],
+.menu-item[data-disabled] .menu-icon,
+.menu-item[data-disabled] .menu-trailing {
+  color: color-mix(in srgb, var(--ui-text) 38%, transparent);
+}
+
+.icon-turned {
+  transform: rotate(90deg);
+}
+
+/* an example circuit category: a small drawing of a component from that category */
+.category-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 32px;
+  margin: -4px 0;
+  color: var(--ui-text-muted);
+}
+
+.menu-label {
+  padding: 12px 12px 4px;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.menu-separator {
+  height: 1px;
+  background: var(--ui-border);
+  margin: 8px 0;
+}
+
+/* the Circuits menu has a divider between every category: keep them tight */
+.category-separator {
+  margin: 2px 0;
+}
+
+/* ---- canvas ------------------------------------------------------------------------------- */
+
+.workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+  padding: 0 12px;
+}
+
+.canvas-area {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--md-shape-l);
+  overflow: hidden;
+  background: var(--canvas-background);
+  box-shadow: inset 0 0 0 1px var(--ui-border);
+}
+
+.circuit-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* ---- bottom bar --------------------------------------------------------------------------- */
+
+.control-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  min-height: 72px;
+  padding: 12px 16px;
+  background: var(--ui-surface);
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speed-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 18px 16px;
+  background: var(--md-surface-container-high);
+  border-radius: var(--md-shape-xs);
+  box-shadow: var(--md-elevation-2);
+  z-index: 70;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 16px;
+  margin-left: auto;
+  color: var(--ui-text-muted);
+}
+
+/* ---- rewind timeline (PLAN.md Phase 20) ---------------------------------------------------- */
+
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 8px 12px 0;
+  padding: 2px 8px;
+  border-radius: var(--md-shape-full);
+  background: var(--md-surface-container-high);
+  color: var(--ui-text-muted);
+}
+
+.timeline .timeline-slider {
+  flex: 1;
+  width: auto;
+  min-width: 64px;
+  margin: 0 6px;
+}
+
+.timeline .timeline-slider[data-disabled] {
+  opacity: 0.38;
+}
+
+/* a recorded frame is showing: the time readout takes the accent, as a reminder it is the past */
+.timeline[data-live='false'] .timeline-time {
+  color: var(--ui-accent);
+}
+
+.readout {
+  display: inline-block;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  /* keep the padding spaces that hold a live value's width */
+  white-space: pre;
+}
+
+/* fixed widths (the font is monospaced) so the readouts don't shift as digits come and go */
+.readout-time {
+  /* "t = 999.999 ms" is 14 characters; room for a fallback μ that is wider than 1ch */
+  min-width: 16ch;
+}
+
+.readout-step {
+  min-width: 22ch;
+}
+
+.readout-temp {
+  /* "T = -273.1 °C" is 13 characters */
+  min-width: 14ch;
+}
+
+/* the speed against real time pads itself to its longest form in the interface language */
+.readout-behind {
+  color: var(--ui-accent);
+}
+
+.readout-button {
+  border: 0;
+  border-radius: 4px;
+  padding: 2px 4px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.readout-button:hover {
+  text-decoration: underline dotted;
+}
+
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px 0 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-s);
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.chip-error {
+  border-color: transparent;
+  background: var(--md-error-container);
+  color: var(--ui-danger);
+}
+
+/* a notice chip: the label opens the details, the cross hides it */
+.chip.chip-notice {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  cursor: default;
+}
+
+.chip-notice-main,
+.chip-notice-close {
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  border: 0;
+  margin: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chip-notice-main {
+  gap: 8px;
+  padding: 0 6px 0 8px;
+}
+
+.chip-notice-close {
+  padding: 0 8px 0 4px;
+  color: var(--ui-text-muted);
+}
+
+.chip-notice-main:hover,
+.chip-notice-close:hover {
+  background: color-mix(in srgb, var(--ui-text) 8%, transparent);
+  color: var(--ui-text);
+}
+
+/* ---- buttons ------------------------------------------------------------------------------ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 24px;
+  font: inherit;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ui-accent);
+  background: transparent;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-full);
+  cursor: pointer;
+  transition: background-color 150ms var(--md-motion);
+}
+
+.button:has(> .icon) {
+  padding-left: 16px;
+}
+
+.button:disabled {
+  color: color-mix(in srgb, var(--ui-text) 38%, transparent);
+  border-color: color-mix(in srgb, var(--ui-text) 12%, transparent);
+  cursor: default;
+}
+
+.button-filled,
+.button-primary {
+  min-width: 112px;
+  color: var(--ui-surface);
+  background: var(--ui-accent);
+  border-color: transparent;
+}
+
+.button-filled:hover:not(:disabled) {
+  box-shadow: 0 1px 2px var(--md-shadow);
+}
+
+.button-filled.button-paused {
+  color: var(--ui-text);
+  background: var(--md-secondary-container);
+}
+
+.button-filled:disabled,
+.button-primary:disabled {
+  background: color-mix(in srgb, var(--ui-text) 12%, transparent);
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: var(--ui-text-muted);
+  background: var(--md-surface-container-high);
+  border: none;
+  border-radius: var(--md-shape-full);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  color: var(--ui-text);
+}
+
+.tooltip {
+  padding: 4px 8px;
+  border-radius: var(--md-shape-xs);
+  background: var(--ui-text);
+  color: var(--ui-surface);
+  font-size: 12px;
+  line-height: 16px;
+  z-index: 80;
+}
+
+/* ---- sliders ------------------------------------------------------------------------------ */
+
+.slider-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  color: var(--ui-text-muted);
+}
+
+.slider-label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  padding-left: 2px;
+}
+
+.slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 160px;
+  height: 28px;
+  touch-action: none;
+  user-select: none;
+}
+
+.slider-track {
+  position: relative;
+  flex-grow: 1;
+  height: 4px;
+  border-radius: var(--md-shape-full);
+  background: var(--md-surface-container-highest);
+}
+
+.slider-range {
+  position: absolute;
+  height: 100%;
+  border-radius: var(--md-shape-full);
+  background: var(--ui-accent);
+}
+
+.slider-thumb {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--md-shape-full);
+  background: var(--ui-accent);
+  box-shadow: 0 1px 2px var(--md-shadow);
+  transition: box-shadow 150ms var(--md-motion);
+}
+
+.slider-thumb:hover {
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--ui-accent) 8%, transparent);
+}
+
+.slider-thumb:focus-visible,
+.slider-thumb:active {
+  outline: none;
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--ui-accent) 12%, transparent);
+}
+
+/* the simulation speed: a wider slider, and the speed in steps per second to read or type */
+.speed-popover .slider {
+  width: 240px;
+}
+
+.slider-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.speed-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+/* a fixed width and right-aligned digits, so the field never shifts as the speed changes */
+.speed-input {
+  width: 7ch;
+  height: 26px;
+  padding: 0 6px;
+  font-family: var(--mono-font);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ui-text);
+  background: transparent;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-xs);
+}
+
+.speed-input:focus {
+  outline: none;
+  border-color: var(--ui-accent);
+  box-shadow: inset 0 0 0 1px var(--ui-accent);
+}
+
+.speed-unit {
+  font-size: 12px;
+}
+
+/* the speed against real time, under the speed slider */
+.pace-field {
+  gap: 2px;
+}
+
+.pace-value {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 2px;
+  color: var(--ui-text);
+}
+
+.pace-note {
+  max-width: 240px;
+  padding-left: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ui-accent);
+}
+
+/* ---- key to the field visualizations (Options > Visualizations) ------------------------- */
+
+/* the values around a part's one while the mouse wheel steps it (WheelValuePopup.tsx) */
+.wheel-value {
+  position: absolute;
+  z-index: 6;
+  padding: 6px 10px;
+  border-radius: var(--md-shape-m);
+  background: color-mix(in srgb, var(--md-surface-container-high) 94%, transparent);
+  box-shadow: var(--md-elevation-2);
+  pointer-events: none;
+  animation: fade-in 120ms var(--md-motion);
+}
+
+.wheel-value-name {
+  font-size: 11px;
+  color: var(--ui-text-muted);
+  margin-bottom: 2px;
+}
+
+.wheel-value-row {
+  font-family: var(--mono-font);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: pre;
+  text-align: center;
+  opacity: 0.45;
+}
+
+.wheel-value-row[data-off='1'] {
+  opacity: 0.7;
+}
+
+.wheel-value-current {
+  opacity: 1;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ui-accent);
+}
+
+/* the key to the visualizations: in the top right column with the sliders, clear of the palette tab */
+.field-legend {
+  flex: none;
+  min-width: 160px;
+  border-radius: var(--md-shape-m);
+  background: color-mix(in srgb, var(--md-surface-container-high) 92%, transparent);
+  box-shadow: var(--md-elevation-2);
+  animation: fade-in 150ms var(--md-motion);
+}
+
+.field-legend-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--md-shape-m);
+  background: none;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.field-legend-header:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.field-legend-header .menu-trailing {
+  margin-left: auto;
+}
+
+.field-legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 12px 10px;
+  list-style: none;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.field-legend-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-legend-swatch {
+  flex: none;
+  width: 28px;
+  height: 14px;
+}
+
+/* ---- the circuit's sliders (upstream's side panel) ---------------------------------------- */
+
+/* the cards over the top right of the canvas: sliders, the DC table, then the legend */
+.overlay-right {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 24px);
+  pointer-events: none;
+}
+
+.overlay-right > * {
+  pointer-events: auto;
+}
+
+.slider-panel {
+  display: flex;
+  flex: 0 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  width: 248px;
+  border-radius: var(--md-shape-m);
+  background: color-mix(in srgb, var(--md-surface-container-high) 92%, transparent);
+  box-shadow: var(--md-elevation-2);
+  animation: fade-in 150ms var(--md-motion);
+}
+
+.slider-panel[data-folded] {
+  flex: none;
+  width: auto;
+}
+
+.slider-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--md-shape-m);
+  background: none;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.slider-panel-header:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.slider-panel-header .menu-trailing {
+  margin-left: auto;
+}
+
+.slider-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 14px 10px;
+  overflow-y: auto;
+}
+
+.slider-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.slider-row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-muted);
+  font-weight: 500;
+}
+
+.slider-row-value {
+  font-family: var(--mono-font);
+  white-space: pre;
+  color: var(--ui-text);
+}
+
+.slider-wide {
+  width: 100%;
+}
+
+/* ---- DC operating point table ------------------------------------------------------------- */
+
+.dc-panel {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  width: 440px;
+  max-width: 100%;
+  border-radius: var(--md-shape-m);
+  background: color-mix(in srgb, var(--md-surface-container-high) 94%, transparent);
+  box-shadow: var(--md-elevation-2);
+  color: var(--ui-text);
+  animation: fade-in 150ms var(--md-motion);
+}
+
+.dc-panel[data-folded] {
+  flex: none;
+  width: auto;
+}
+
+.dc-panel-header {
+  display: flex;
+  align-items: center;
+}
+
+.dc-panel-title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 4px 0 12px;
+  border: none;
+  border-radius: var(--md-shape-m);
+  background: none;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dc-panel-title > span {
+  flex: 1;
+}
+
+.dc-panel-title:focus-visible,
+.dc-sort:focus-visible,
+.dc-tabs button:focus-visible,
+.dc-segmented button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.dc-panel-close {
+  margin-right: 4px;
+}
+
+.dc-panel-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+
+.dc-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dc-segmented {
+  display: inline-flex;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-full);
+  overflow: hidden;
+}
+
+.dc-segmented button {
+  height: 30px;
+  padding: 0 14px;
+  border: none;
+  background: none;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dc-segmented button + button {
+  border-left: 1px solid var(--ui-border);
+}
+
+.dc-segmented button[aria-checked='true'] {
+  background: var(--md-secondary-container);
+}
+
+.dc-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.dc-tabs button {
+  flex: 1;
+  height: 34px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ui-text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dc-tabs button[aria-selected='true'] {
+  border-bottom-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+
+.dc-count {
+  font-family: var(--mono-font);
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.dc-table-wrap {
+  min-height: 0;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.dc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.dc-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0;
+  background: var(--md-surface-container-high);
+  color: var(--ui-text-muted);
+  font-weight: 500;
+  text-align: left;
+}
+
+.dc-table th.dc-num {
+  text-align: right;
+}
+
+.dc-sort {
+  width: 100%;
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dc-table td {
+  padding: 0 6px;
+  border-top: 1px solid color-mix(in srgb, var(--ui-border) 50%, transparent);
+}
+
+.dc-table tbody tr {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .dc-table tbody tr:hover {
+    background: color-mix(in srgb, var(--ui-text) 8%, transparent);
+  }
+}
+
+.dc-table tbody tr[data-pinned] {
+  background: var(--md-secondary-container);
+}
+
+.dc-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dc-table td.dc-num {
+  font-family: var(--mono-font);
+  white-space: pre;
+  text-align: right;
+}
+
+.dc-table tr.dc-sub td {
+  border-top: none;
+}
+
+.dc-table tr.dc-sub .dc-name {
+  padding-left: 22px;
+  color: var(--ui-text-muted);
+}
+
+.dc-note {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.dc-problem {
+  color: var(--ui-danger);
+}
+
+/* phones: four columns fit without scrolling sideways */
+@media (max-width: 480px) {
+  .dc-table {
+    font-size: 11px;
+  }
+
+  .dc-table td,
+  .dc-sort {
+    padding-left: 3px;
+    padding-right: 3px;
+  }
+
+  .dc-name {
+    max-width: 84px;
+  }
+
+  .dc-table tr.dc-sub .dc-name {
+    padding-left: 14px;
+  }
+}
+
+/* ---- dialog ------------------------------------------------------------------------------- */
+
+.dialog-overlay {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  background: color-mix(in srgb, var(--canvas-background) 60%, transparent);
+  animation: fade-in 150ms var(--md-motion);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.dialog-content {
+  position: fixed;
+  z-index: 61;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  padding: 24px;
+  background: var(--md-surface-container-high);
+  border-radius: var(--md-shape-xl);
+  box-shadow: var(--md-elevation-3);
+  color: var(--ui-text);
+}
+
+.dialog-title {
+  margin: 0 0 16px;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 400;
+}
+
+.dialog-description {
+  margin: 0 0 16px;
+  color: var(--ui-text-muted);
+}
+
+.dialog-problem {
+  color: var(--ui-danger);
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.dialog-buttons .button:not(.button-primary) {
+  border-color: transparent;
+}
+
+.text-input {
+  width: 100%;
+  height: 56px;
+  font: inherit;
+  font-size: 16px;
+  padding: 0 16px;
+  color: var(--ui-text);
+  background: transparent;
+  border: 1px solid var(--ui-text-muted);
+  border-radius: var(--md-shape-xs);
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--ui-accent);
+  box-shadow: inset 0 0 0 1px var(--ui-accent);
+}
+
+.text-input::placeholder {
+  color: var(--ui-text-muted);
+}
+
+/* ---- editor: palette -------------------------------------------------------------------- */
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: 272px;
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--md-shape-l);
+  background: var(--md-surface-container-low);
+  transition:
+    width 250ms var(--md-motion),
+    margin-right 250ms var(--md-motion),
+    opacity 200ms var(--md-motion);
+}
+
+/* slid away: no width, and the workspace gap is taken back too */
+.palette[data-open='false'] {
+  width: 0;
+  margin-right: -12px;
+  opacity: 0;
+}
+
+/* the content keeps its width while the panel slides */
+.palette-inner {
+  display: flex;
+  flex-direction: column;
+  width: 272px;
+  min-height: 0;
+  flex: 1;
+}
+
+.palette-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 12px 8px 4px 12px;
+}
+
+.palette-search {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 0 12px;
+  height: 44px;
+  border-radius: var(--md-shape-full);
+  background: var(--md-surface-container-high);
+  color: var(--ui-text-muted);
+}
+
+.palette-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  font: inherit;
+  color: var(--ui-text);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+.palette-search-input::placeholder {
+  color: var(--ui-text-muted);
+}
+
+.palette-hint {
+  margin: 4px 16px 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ui-text-muted);
+}
+
+.palette-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.palette-group-title {
+  margin: 8px 0 2px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: var(--ui-text-muted);
+}
+
+/* a category header: click to fold its components away */
+.palette-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--md-shape-s);
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.palette-group-toggle:hover:not(:disabled) {
+  color: var(--ui-text);
+  background: color-mix(in srgb, var(--ui-text) 8%, transparent);
+}
+
+.palette-group-toggle:disabled {
+  cursor: default;
+}
+
+.palette-group-chevron {
+  transition: transform 150ms var(--md-motion);
+}
+
+.palette-group-toggle[aria-expanded='false'] .palette-group-chevron {
+  transform: rotate(-90deg);
+}
+
+.palette-item {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 2px 8px 2px 4px;
+  font: inherit;
+  text-align: left;
+  color: var(--ui-text);
+  background: transparent;
+  border: none;
+  border-radius: var(--md-shape-full);
+  cursor: grab;
+  /* a vertical swipe scrolls the list; a sideways drag carries the component onto the canvas */
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.palette-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 150ms var(--md-motion);
+}
+
+.palette-item:hover::before {
+  opacity: 0.08;
+}
+
+.palette-item:active::before {
+  opacity: 0.1;
+}
+
+.palette-item[data-active] {
+  background: var(--md-secondary-container);
+  font-weight: 500;
+}
+
+.palette-icon {
+  flex: none;
+  border-radius: var(--md-shape-xs);
+}
+
+.palette-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+kbd,
+.palette-key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ui-text-muted);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-xs);
+}
+
+.palette-empty {
+  margin: 16px 8px;
+  color: var(--ui-text-muted);
+}
+
+/* a palette row: the component, then the star that pins it to the quick pick */
+.palette-row {
+  display: flex;
+  align-items: center;
+}
+
+.palette-row .palette-item {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.palette-star {
+  flex: none;
+  color: var(--ui-text-muted);
+}
+
+.palette-star[data-on] {
+  color: var(--ui-accent);
+}
+
+/* with a mouse the empty star shows on the row under it; touch screens always show it */
+@media (hover: hover) and (pointer: fine) {
+  .palette-star:not([data-on]) {
+    opacity: 0;
+  }
+
+  .palette-row:hover .palette-star,
+  .palette-star:focus-visible {
+    opacity: 1;
+  }
+}
+
+/* ---- editor: quick pick ------------------------------------------------------------------- */
+
+.quick-pick {
+  display: flex;
+  gap: 2px;
+}
+
+.quick-pick-group {
+  display: flex;
+  gap: 2px;
+}
+
+.quick-slot {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 52px;
+  height: 44px;
+  padding: 0;
+  color: var(--ui-text);
+  background: transparent;
+  border: none;
+  border-radius: var(--md-shape-m);
+  cursor: grab;
+  /* a swipe along the bar scrolls it; a drag across carries the component onto the canvas */
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.quick-slot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 150ms var(--md-motion);
+}
+
+.quick-slot:hover::before {
+  opacity: 0.08;
+}
+
+.quick-slot:active::before {
+  opacity: 0.1;
+}
+
+.quick-slot[data-active] {
+  background: var(--md-secondary-container);
+}
+
+.quick-pick-divider {
+  flex: none;
+  background: var(--ui-border);
+}
+
+.quick-pick-grid .quick-pick-divider {
+  align-self: stretch;
+  height: 1px;
+  margin: 2px 6px;
+}
+
+/* the tab at the canvas's left edge that slides the palette back */
+.palette-tab {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 40px;
+  padding: 0;
+  color: var(--ui-text-muted);
+  background: var(--md-surface-container-high);
+  border: none;
+  border-radius: 0 var(--md-shape-l) var(--md-shape-l) 0;
+  box-shadow: var(--md-elevation-2);
+  cursor: pointer;
+}
+
+.palette-tab:hover {
+  color: var(--ui-text);
+  background: color-mix(in srgb, var(--ui-text) 8%, var(--md-surface-container-high));
+}
+
+/* the fold handle: a faint grip, brighter under the pointer */
+.quick-pick-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0;
+  color: var(--ui-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 150ms var(--md-motion);
+  touch-action: manipulation;
+}
+
+.quick-pick-handle:hover,
+.quick-pick-handle:focus-visible {
+  opacity: 1;
+}
+
+.quick-pick-grip {
+  display: block;
+  border-radius: var(--md-shape-full);
+  background: currentColor;
+}
+
+.quick-pick-handle-strip {
+  align-self: center;
+  width: 64px;
+  height: 16px;
+}
+
+.quick-pick-handle-strip .quick-pick-grip {
+  width: 32px;
+  height: 4px;
+}
+
+/* at the top of the open palette */
+.quick-pick-grid {
+  flex-direction: column;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.quick-pick-grid .quick-pick-group {
+  flex-wrap: wrap;
+}
+
+.quick-pick-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  margin: 4px 4px 2px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: var(--ui-text-muted);
+}
+
+/* "Reorder" / "Done" after the Favorites caption */
+/* Favorites and Recent fold like the categories below them */
+.quick-pick-caption-toggle {
+  flex: 1;
+  width: auto;
+  min-height: 24px;
+  margin-left: -4px;
+  color: inherit;
+}
+
+.quick-pick-caption-button {
+  height: 24px;
+  padding: 0 8px;
+  font: inherit;
+  letter-spacing: inherit;
+  color: var(--ui-text);
+  background: transparent;
+  border: none;
+  border-radius: var(--md-shape-full);
+  cursor: pointer;
+}
+
+.quick-pick-caption-button:hover,
+.quick-pick-caption-button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--ui-text) 10%, transparent);
+}
+
+/* the favorites while being put in order: each one is picked up and dropped on another's place */
+.quick-order-slot {
+  touch-action: none;
+  box-shadow: inset 0 0 0 1px var(--ui-border);
+}
+
+.quick-order-slot[data-held] {
+  cursor: grabbing;
+  background: var(--md-secondary-container);
+  box-shadow: var(--md-elevation-2);
+}
+
+.quick-order-hint {
+  width: 100%;
+  margin: 4px 4px 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ui-text-muted);
+}
+
+/* phones upright: a row between the canvas and the run controls, under its fold handle */
+.quick-pick-dock-strip {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.quick-pick-strip {
+  flex: none;
+  align-items: center;
+  margin: 0 8px;
+  padding: 2px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-radius: var(--md-shape-l);
+  background: var(--md-surface-container-low);
+}
+
+.quick-pick-strip .quick-slot {
+  width: 48px;
+  touch-action: pan-x;
+}
+
+.quick-pick-strip .quick-pick-divider {
+  width: 1px;
+  height: 28px;
+  margin: 0 4px;
+}
+
+.quick-pick-more {
+  color: var(--ui-text-muted);
+  cursor: pointer;
+}
+
+/* ---- editor: property panel --------------------------------------------------------------- */
+
+.inspector {
+  display: flex;
+  flex-direction: column;
+  width: 296px;
+  flex: none;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+  border-radius: var(--md-shape-l);
+  background: var(--md-surface-container-low);
+}
+
+/* the bottom sheet's drag handle; shown on narrow screens only */
+.sheet-handle {
+  display: none;
+}
+
+.inspector-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inspector-title {
+  flex: 1;
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+/* the part drawn live, with its voltage, current and power (LiveHeader.tsx) */
+.live-header {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.live-part {
+  position: relative;
+  flex: none;
+  width: 96px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: var(--md-shape-m);
+  border: 1px solid var(--ui-border);
+}
+
+/* a tall part is drawn on its side so it fills the box */
+.live-part-canvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 96px;
+  height: 64px;
+  transform: translate(-50%, -50%);
+}
+
+.live-part-canvas[data-turned] {
+  width: 64px;
+  height: 96px;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+.live-readouts {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.live-values {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.live-key {
+  font-weight: 600;
+}
+
+.live-value {
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-spark {
+  width: 100%;
+  height: 22px;
+}
+
+/* the selected part's law with live numbers (FormulaCard.tsx) */
+.formula-card {
+  margin: 4px 0;
+  padding: 4px 8px 8px;
+  border-radius: var(--md-shape-m);
+  background: var(--md-surface-container-high);
+}
+
+.formula-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.formula-heading {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.formula-law {
+  font-family: var(--mono-font);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.formula-law + .formula-law {
+  margin-top: 6px;
+}
+
+.formula-symbols {
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+
+/* values wrap as whole tokens, under the formula, never inside a value */
+.formula-line {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0.6em;
+  padding-left: 1.2em;
+}
+
+.formula-rel {
+  color: var(--ui-text-muted);
+}
+
+.formula-token {
+  white-space: pre;
+}
+
+.inspector-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 4px;
+  margin: 8px 0 4px;
+}
+
+/* align and spread: a row of small icon buttons under the actions */
+.inspector-align {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  justify-items: center;
+  gap: 2px;
+  margin: 0 0 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ui-border);
+}
+
+/* eight in a row on the narrowest panel */
+.inspector-align .icon-button {
+  width: 100%;
+  max-width: 36px;
+  height: 36px;
+}
+
+/* an inspector action: icon on a tonal circle with a short caption under it */
+.action-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 2px;
+  color: var(--ui-text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--md-shape-s);
+  font-family: var(--font);
+  font-size: 11px;
+  line-height: 14px;
+  cursor: pointer;
+}
+
+.action-button-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 32px;
+  background: color-mix(in srgb, var(--ui-text) 8%, transparent);
+  border-radius: var(--md-shape-full);
+}
+
+.action-button-caption {
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.action-button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+}
+
+@media (hover: hover) {
+  .action-button:hover {
+    color: var(--ui-text);
+  }
+
+  .action-button:hover .action-button-icon {
+    background: color-mix(in srgb, var(--ui-text) 14%, transparent);
+  }
+}
+
+.inspector-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.inspector-empty {
+  margin: 0;
+  color: var(--ui-text-muted);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-label {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ui-text-muted);
+}
+
+.field-input {
+  height: 40px;
+  font-size: 14px;
+  padding: 0 12px;
+  font-family: var(--mono-font);
+}
+
+textarea.field-input {
+  height: auto;
+  padding: 8px 12px;
+  resize: vertical;
+}
+
+.field-input[data-invalid] {
+  border-color: var(--ui-danger);
+}
+
+.param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.param-name,
+.param-value {
+  font-family: var(--mono-font);
+  min-width: 0;
+}
+
+.param-equals {
+  color: var(--ui-text-muted);
+}
+
+.param-error {
+  grid-column: 1 / -1;
+}
+
+.param-add {
+  align-self: flex-start;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.formula-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.formula-link-ref {
+  font-family: var(--mono-font);
+  font-size: 12px;
+  color: var(--ui-text-muted);
+  white-space: pre;
+  min-width: 9ch;
+}
+
+.formula-link-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ui-text-muted);
+}
+
+.field-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ui-danger);
+}
+
+.field-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--ui-accent);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.icon-button.icon-button-small {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+}
+
+.select {
+  height: 40px;
+  padding: 0 8px;
+  font: inherit;
+  color: var(--ui-text);
+  background: var(--md-surface-container-high);
+  border: 1px solid var(--ui-text-muted);
+  border-radius: var(--md-shape-xs);
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--ui-accent);
+}
+
+/* ---- editor: overlays on the canvas ------------------------------------------------------- */
+
+.mode-chip {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 4px 4px 16px;
+  border-radius: var(--md-shape-full);
+  background: var(--md-surface-container-highest);
+  box-shadow: var(--md-elevation-2);
+  white-space: nowrap;
+}
+
+.mode-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mode-chip .button {
+  height: 32px;
+}
+
+/* phones: too narrow to share the top edge with the Sliders pill, so the chip goes under it */
+@media (max-width: 719px) {
+  .mode-chip {
+    top: 64px;
+    max-width: calc(100% - 24px);
+  }
+}
+
+.toast {
+  position: absolute;
+  z-index: 8;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 16px;
+  border-radius: var(--md-shape-xs);
+  background: var(--ui-text);
+  color: var(--ui-surface);
+  box-shadow: var(--md-elevation-3);
+}
+
+.app-bar-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.app-bar-actions .icon-button,
+.app-bar > .icon-button {
+  background: transparent;
+}
+
+.icon-button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+/* ---- dialogs ------------------------------------------------------------------------------ */
+
+.dialog-content.dialog-wide {
+  top: 10%;
+  width: min(760px, calc(100vw - 32px));
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.text-input.text-area {
+  height: auto;
+  padding: 12px 16px;
+  font-family: var(--mono-font);
+  font-size: 13px;
+  line-height: 18px;
+  resize: vertical;
+}
+
+.link-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.link-row-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.link-row-line .text-input {
+  height: 44px;
+  font-family: var(--mono-font);
+  font-size: 13px;
+}
+
+.shortcut-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.shortcut-table {
+  border-collapse: collapse;
+}
+
+.shortcut-table td {
+  padding: 4px 12px 4px 0;
+  vertical-align: middle;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- compact width ------------------------------------------------------------------------ */
+
+/* phones either way up: one slim bar, the menus as icons beside the title (each keeps its name
+   for screen readers and as a tooltip) */
+@media (max-width: 719px), (max-height: 559px) {
+  .app-bar {
+    min-height: 48px;
+    padding: 4px 8px;
+    gap: 2px;
+  }
+
+  .app-bar-brand {
+    width: 32px;
+    height: 32px;
+    margin-right: 4px;
+  }
+
+  .app-bar-title-row {
+    flex: 1 1 auto;
+    width: auto;
+    margin: 0 4px 0 -2px;
+  }
+
+  .app-bar-title {
+    font-size: 18px;
+    line-height: 24px;
+  }
+
+  .app-bar-menus {
+    gap: 0;
+  }
+
+  .menu-trigger {
+    width: 40px;
+    padding: 0;
+  }
+
+  .menu-trigger-label {
+    display: none;
+  }
+
+  .menu-trigger-icon {
+    color: var(--ui-text);
+  }
+}
+
+/* phones on their side: height is what runs short, so the bar's run controls become a rail
+   down the right of the canvas and the time readouts sit at the end of the app bar's row */
+@media (max-height: 559px) and (orientation: landscape) {
+  .app {
+    display: grid;
+    /* the rail is only as wide as its buttons: the readouts above it reach over the canvas */
+    grid-template-columns: minmax(0, 1fr) auto 64px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'bar status status'
+      'work work rail'
+      'timeline timeline rail';
+  }
+
+  .timeline {
+    grid-area: timeline;
+    margin: 0 0 8px 8px;
+  }
+
+  .app-bar {
+    grid-area: bar;
+    min-width: 0;
+  }
+
+  .workspace {
+    grid-area: work;
+    padding: 0 0 8px 8px;
+    gap: 8px;
+  }
+
+  .control-bar {
+    display: contents;
+  }
+
+  .control-bar > .control-group {
+    grid-area: rail;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 0 8px;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+
+  .control-bar > .control-group > .button-filled {
+    min-width: 0;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    margin-bottom: 4px;
+  }
+
+  .run-label {
+    display: none;
+  }
+
+  /* the readouts stack two to a column, so the row stays one slim bar */
+  .control-bar > .status {
+    grid-area: status;
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: auto auto;
+    align-content: center;
+    justify-items: start;
+    gap: 0 12px;
+    margin: 0;
+    padding: 4px 12px 4px 4px;
+  }
+
+  .control-bar > .status .readout {
+    line-height: 18px;
+  }
+
+  .control-bar > .status .readout-button {
+    padding: 0 4px;
+  }
+
+  .control-bar > .status .chip {
+    height: 20px;
+    padding: 0 8px 0 4px;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .control-bar > .status .chip.chip-notice {
+    padding: 0;
+    gap: 0;
+  }
+
+  .control-bar > .status .chip-notice-main {
+    gap: 4px;
+    padding: 0 4px;
+  }
+
+  .control-bar > .status .chip-notice-close {
+    padding: 0 6px 0 2px;
+  }
+}
+
+@media (max-width: 600px) {
+  .control-bar {
+    gap: 8px 16px;
+  }
+
+  .slider {
+    width: 140px;
+  }
+
+  .workspace {
+    padding: 0 8px;
+  }
+
+  .canvas-area {
+    margin: 0;
+  }
+}
+
+@media (max-width: 719px) {
+  .palette[data-open='false'] {
+    display: none;
+  }
+
+  /* the palette floats over the canvas, just under the app bar whatever its height */
+  .workspace {
+    position: relative;
+  }
+
+  .palette {
+    position: absolute;
+    z-index: 10;
+    top: 0;
+    bottom: 0;
+    left: 8px;
+    box-shadow: var(--md-elevation-3);
+    background: var(--md-surface-container-high);
+  }
+
+  /* a bottom sheet: drag the handle up and down, or tap it to open and shut */
+  .inspector {
+    position: fixed;
+    z-index: 9;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: calc(100% - 72px);
+    padding-top: 0;
+    border-radius: var(--md-shape-l) var(--md-shape-l) 0 0;
+    box-shadow: var(--md-elevation-3);
+    background: var(--md-surface-container-high);
+    transition:
+      height 200ms ease,
+      transform 200ms var(--md-motion);
+  }
+
+  .inspector[data-dragging] {
+    transition: none;
+  }
+
+  /* while a component is dragged on the canvas the sheet slides out of the way, and back after */
+  .inspector[data-canvas-drag] {
+    transform: translateY(calc(100% - 28px));
+    pointer-events: none;
+  }
+
+  .sheet-handle {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    width: calc(100% + 32px);
+    margin: 0 -16px;
+    padding: 12px 0 10px;
+    border: none;
+    background: inherit;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .sheet-handle-bar {
+    width: 32px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--ui-text-muted);
+    opacity: 0.5;
+  }
+
+  .sheet-handle:focus-visible .sheet-handle-bar {
+    opacity: 1;
+  }
+
+  .app-bar-actions {
+    display: none;
+  }
+}
+
+/* ---- scope properties --------------------------------------------------------------------- */
+
+.scope-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* the scope as drawn right now, at the top of its properties dialog */
+.scope-preview {
+  display: block;
+  margin: 0 auto;
+  border-radius: var(--md-shape-m);
+}
+
+/* plot switches as chips, each with a dot in its trace color */
+.scope-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scope-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 160ms var(--md-motion),
+    border-color 160ms var(--md-motion);
+}
+
+.scope-chip-on {
+  border-color: var(--chip);
+  background: color-mix(in srgb, var(--chip) 16%, transparent);
+}
+
+.scope-chip-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.scope-chip:has(.scope-chip-input:focus-visible) {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+.scope-chip-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--chip);
+  transition:
+    background-color 160ms var(--md-motion),
+    transform 220ms var(--md-motion);
+}
+
+.scope-chip-on .scope-chip-dot {
+  background: var(--chip);
+  transform: scale(1.15);
+}
+
+.scope-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.scope-section:last-child {
+  border-bottom: 0;
+}
+
+.scope-section-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ui-accent);
+}
+
+.scope-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  column-gap: 16px;
+}
+
+.scope-radios {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 20px;
+}
+
+.scope-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.scope-radio input {
+  margin: 0;
+  accent-color: var(--ui-accent);
+}
+
+/* ---- AC analysis (Bode plot) dialog ------------------------------------------------------ */
+
+.dialog-content.bode-dialog-content {
+  width: min(880px, calc(100vw - 32px));
+  top: 6%;
+  max-height: 90vh;
+}
+
+.bode-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.bode-form {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr 1fr 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.bode-form .field-input,
+.bode-form .scope-select {
+  min-width: 0;
+}
+
+.bode-plot-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 8px 10px;
+  border-radius: var(--md-shape-m);
+}
+
+.bode-legend {
+  display: flex;
+  gap: 16px;
+  padding: 0 4px;
+  font-size: 13px;
+}
+
+.bode-key::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px solid currentColor;
+}
+
+.bode-key-dashed::before {
+  border-top-style: dashed;
+}
+
+.bode-canvas {
+  display: block;
+  width: 100%;
+  border-radius: var(--md-shape-s);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* fixed-width live values: monospace and padded, so nothing shifts while they change */
+.bode-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 16px;
+  min-height: 20px;
+  padding: 0 4px;
+  font-family: var(--mono-font);
+  font-size: 13px;
+  white-space: pre;
+}
+
+.bode-readout-pair {
+  white-space: pre;
+}
+
+.bode-readout-label {
+  font-family: var(--font);
+  opacity: 0.75;
+}
+
+.bode-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 13px;
+}
+
+.bode-progress {
+  flex: 1 1 160px;
+  height: 4px;
+  accent-color: var(--ui-accent);
+}
+
+.bode-status-text {
+  font-family: var(--mono-font);
+  white-space: pre;
+}
+
+.bode-status-note {
+  color: var(--ui-text-muted);
+}
+
+@media (max-width: 719px) {
+  .bode-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bode-form > .field:nth-child(-n + 2) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---- Parameter sweep and Monte Carlo dialog ---------------------------------------------- */
+
+.sweep-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+/* Material 3 segmented buttons */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-full);
+  overflow: hidden;
+}
+
+.segmented-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-left: 1px solid var(--ui-border);
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background var(--md-motion);
+}
+
+.segmented-button:first-child {
+  border-left: 0;
+}
+
+.segmented-button[data-selected] {
+  background: var(--md-secondary-container);
+}
+
+.segmented-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.segmented-button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.sweep-form {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.sweep-form .sweep-wide {
+  grid-column: span 2;
+}
+
+.sweep-form .sweep-list {
+  grid-column: span 3;
+}
+
+.sweep-parts {
+  font-size: 13px;
+  color: var(--ui-text-muted);
+  padding-top: 6px;
+}
+
+/* fixed-width live values, as in the Bode readout */
+.sweep-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 20px;
+  padding: 0 4px;
+  font-family: var(--mono-font);
+  font-size: 13px;
+  white-space: pre;
+}
+
+.sweep-readout-head {
+  white-space: pre;
+}
+
+.sweep-runs-list {
+  display: grid;
+  gap: 2px 20px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.sweep-run {
+  white-space: pre;
+}
+
+@media (max-width: 719px) {
+  .bode-form.sweep-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bode-form.sweep-form > .field:nth-child(n) {
+    grid-column: auto;
+  }
+
+  .bode-form.sweep-form > .sweep-wide,
+  .bode-form.sweep-form > .sweep-list {
+    grid-column: 1 / -1;
+  }
+}
+
+.scope-xy-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.text-input.scope-select,
+.text-input.scope-short-input,
+.scope-scale-input .text-input {
+  height: 40px;
+  font-size: 14px;
+  padding: 0 12px;
+}
+
+.text-input.scope-short-input {
+  width: 96px;
+}
+
+.scope-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.scope-slider-row input[type='range'] {
+  flex: 1;
+  accent-color: var(--ui-accent);
+}
+
+.scope-value {
+  min-width: 88px;
+  text-align: right;
+  font-family: var(--mono-font);
+  font-size: 13px;
+}
+
+.scope-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.chip.chip-selected {
+  border-color: transparent;
+  background: var(--md-secondary-container);
+}
+
+.scope-scale-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.scope-scale-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 220px;
+}
+
+.scope-scale-input .text-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono-font);
+}
+
+.field-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---- motion: small answers to what the user does ------------------------------------------ */
+
+/* buttons give a little under the finger */
+.button,
+.icon-button,
+.menu-trigger {
+  transition:
+    background-color 150ms var(--md-motion),
+    transform 120ms var(--md-motion);
+}
+
+.button:active:not(:disabled),
+.icon-button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+/* Run and Stop swap icons with a turn */
+.icon-swap {
+  animation: icon-swap 260ms var(--md-motion);
+}
+
+@keyframes icon-swap {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.5);
+  }
+}
+
+.tooltip {
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+  animation: pop-in 120ms var(--md-motion);
+}
+
+.speed-popover {
+  transform-origin: var(--radix-popover-content-transform-origin);
+  animation: pop-in 160ms var(--md-motion);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+.dialog-content {
+  animation: dialog-in 220ms var(--md-motion);
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(12px) scale(0.96);
+  }
+}
+
+/* the property panel slides in beside the canvas (up from the bottom on phones) */
+.inspector {
+  animation: panel-in 220ms var(--md-motion);
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@media (max-width: 719px) {
+  .inspector {
+    animation-name: sheet-in;
+  }
+
+  @keyframes sheet-in {
+    from {
+      transform: translateY(40%);
+      opacity: 0;
+    }
+  }
+}
+
+.toast {
+  animation: toast-in 240ms var(--md-motion);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---- Circuits sheet (phones) -------------------------------------------------------------- */
+
+/* the dimmed page around the sheet: a tap there puts the sheet away */
+.circuits-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: color-mix(in srgb, var(--ui-shadow) 60%, transparent);
+  animation: scrim-in 200ms var(--md-motion);
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* a bottom sheet with a little of the app showing above it; on its side, a column in the middle */
+.circuits-sheet {
+  position: fixed;
+  z-index: 31;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: calc(env(safe-area-inset-top) + 40px);
+  display: flex;
+  flex-direction: column;
+  margin: 0 auto;
+  max-width: 600px;
+  border-radius: var(--md-shape-xl) var(--md-shape-xl) 0 0;
+  background: var(--md-surface-container-high);
+  color: var(--ui-text);
+  box-shadow: var(--md-elevation-3);
+  padding-bottom: env(safe-area-inset-bottom);
+  transition: transform 180ms var(--md-motion);
+  animation: sheet-up 240ms var(--md-motion);
+}
+
+@media (max-height: 559px) and (orientation: landscape) {
+  .circuits-sheet {
+    top: 8px;
+    width: min(560px, calc(100% - 32px));
+  }
+}
+
+/* on a desktop, Circuits > Search circuits: a dialog in the middle */
+@media (min-width: 720px) and (min-height: 560px) {
+  .circuits-sheet {
+    top: 10vh;
+    bottom: 10vh;
+    width: min(560px, calc(100% - 32px));
+    border-radius: var(--md-shape-xl);
+  }
+
+  .circuits-sheet-handle {
+    visibility: hidden;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(48px);
+    opacity: 0;
+  }
+}
+
+.circuits-sheet-handle {
+  display: flex;
+  justify-content: center;
+  flex: none;
+  padding: 10px 0 2px;
+}
+
+.circuits-sheet-handle .sheet-handle-bar {
+  width: 32px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ui-text-muted);
+  opacity: 0.5;
+}
+
+.circuits-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 4px 20px;
+}
+
+.circuits-sheet-title {
+  flex: 1;
+  margin: 0;
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 400;
+}
+
+.circuits-sheet-search {
+  flex: none;
+  margin: 0 16px 8px;
+}
+
+.circuits-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 24px;
+}
+
+.circuits-sheet-empty {
+  padding: 16px 20px;
+}
+
+.sheet-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* a divider between categories, and between the last category and the circuits after it */
+.sheet-category + li,
+li + .sheet-category {
+  border-top: 1px solid var(--ui-border);
+}
+
+.sheet-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  color: var(--ui-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.sheet-row:active {
+  background: color-mix(in srgb, var(--ui-text) 8%, transparent);
+}
+
+.sheet-group {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  font-weight: 500;
+}
+
+.sheet-row-title {
+  flex: 1;
+}
+
+.sheet-row-path {
+  font-size: 12px;
+  color: var(--ui-text-muted);
+}
+
+.sheet-chevron {
+  color: var(--ui-text-muted);
+  transition: transform 150ms var(--md-motion);
+}
+
+.sheet-group[aria-expanded='true'] .sheet-chevron {
+  transform: rotate(90deg);
+}
+
+/* ---- themes: link banner, library, editor ------------------------------------------------- */
+
+.theme-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
+  max-width: calc(100% - 24px);
+  padding: 8px 8px 8px 20px;
+  border-radius: var(--md-shape-l);
+  background: var(--md-surface-container-highest);
+  box-shadow: var(--md-elevation-2);
+  animation: fade-in 150ms var(--md-motion);
+}
+
+.theme-banner-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.theme-banner-buttons .button {
+  height: 36px;
+}
+
+.button-danger {
+  color: var(--ui-surface);
+  background: var(--ui-danger);
+  border-color: transparent;
+}
+
+.theme-swatch {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 72px;
+  height: 48px;
+  overflow: hidden;
+  border-radius: var(--md-shape-s);
+  box-shadow: inset 0 0 0 1px var(--ui-border);
+}
+
+.theme-swatch-wire {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 18px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.theme-swatch-dot {
+  position: absolute;
+  left: 30px;
+  top: 17px;
+  width: 6px;
+  height: 6px;
+}
+
+.theme-swatch-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 14px;
+}
+
+.theme-swatch-bar > span {
+  position: absolute;
+  right: 8px;
+  top: 4px;
+  width: 20px;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.theme-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+  border-radius: var(--md-shape-m);
+}
+
+.theme-row-active {
+  background: var(--md-secondary-container);
+}
+
+.theme-row-pick {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--md-shape-m);
+  cursor: pointer;
+}
+
+.theme-row-pick:hover {
+  background: color-mix(in srgb, var(--ui-text) 8%, transparent);
+}
+
+.theme-row-pick:focus-visible {
+  outline: 2px solid var(--ui-accent);
+}
+
+.theme-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.theme-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.theme-row-check {
+  color: var(--ui-accent);
+}
+
+.theme-row-desc {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.theme-row-active .theme-row-desc {
+  /* muted text on the tinted row falls short of 4.5:1 in some themes */
+  color: var(--ui-text);
+}
+
+.theme-row-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.theme-row-actions .icon-button {
+  background: transparent;
+}
+
+.theme-list-heading {
+  margin: 20px 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ui-text-muted);
+}
+
+.theme-list-empty {
+  margin: 0;
+  color: var(--ui-text-muted);
+}
+
+.dialog-buttons-gap {
+  flex: 1;
+}
+
+.dialog-content.dialog-theme {
+  top: 4vh;
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, calc(100vw - 32px));
+  height: 92vh;
+  padding-bottom: 16px;
+}
+
+.theme-editor {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 24px;
+  min-height: 0;
+}
+
+.theme-editor-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.theme-preview-canvas {
+  display: block;
+  width: 100%;
+  flex: 1;
+  min-height: 220px;
+  max-height: 520px;
+  border-radius: var(--md-shape-l);
+  box-shadow: inset 0 0 0 1px var(--ui-border);
+  background: var(--canvas-background);
+}
+
+.theme-contrast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ui-text-muted);
+}
+
+.theme-contrast-bad {
+  color: var(--ui-danger);
+}
+
+.theme-editor-form {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+.theme-section {
+  padding: 4px 0 16px;
+}
+
+.theme-section-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 8px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ui-accent);
+  background: var(--md-surface-container-high);
+}
+
+.theme-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theme-field {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1.25fr);
+  align-items: center;
+  column-gap: 12px;
+}
+
+.theme-field-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-input.theme-field-input {
+  height: 36px;
+  padding: 0 10px;
+  font-family: var(--mono-font);
+  font-size: 13px;
+}
+
+.text-input[aria-invalid='true'] {
+  border-color: var(--ui-danger);
+}
+
+.theme-field-note {
+  grid-column: 2 / 4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.theme-warning {
+  color: var(--ui-danger);
+}
+
+.theme-color {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-s);
+  background: transparent;
+  cursor: pointer;
+}
+
+.theme-color::-webkit-color-swatch-wrapper {
+  padding: 3px;
+}
+
+.theme-color::-webkit-color-swatch {
+  border: 0;
+  border-radius: 5px;
+}
+
+.theme-color::-moz-color-swatch {
+  border: 0;
+  border-radius: 5px;
+}
+
+.theme-gradient {
+  height: 12px;
+  border-radius: 6px;
+}
+
+.theme-traces {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.theme-trace {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+}
+
+.theme-trace .theme-field {
+  flex: 1;
+}
+
+.theme-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.theme-range .field-label {
+  font-size: 14px;
+  color: var(--ui-text);
+}
+
+.theme-range input {
+  accent-color: var(--ui-accent);
+}
+
+.theme-range-value {
+  font-family: var(--mono-font);
+  white-space: pre;
+}
+
+.link-theme-check {
+  margin: 4px 0 12px;
+}
+
+@media (max-width: 719px) {
+  .dialog-content.dialog-theme {
+    top: 0;
+    width: 100vw;
+    height: 100%;
+    max-height: none;
+    padding: 16px;
+    border-radius: 0;
+  }
+
+  .theme-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .theme-preview-canvas {
+    flex: none;
+    height: 34vh;
+    min-height: 0;
+  }
+
+  .theme-editor-form {
+    flex: 1;
+  }
+
+  .theme-row-pick {
+    gap: 12px;
+    padding: 8px;
+  }
+
+  .theme-swatch {
+    width: 56px;
+  }
+
+  .dialog-theme .dialog-buttons {
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+}
+
+.text-input.theme-text-input {
+  font-family: var(--font);
+}
+
+ul.theme-contrast {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.theme-contrast-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--md-shape-xs);
+  cursor: pointer;
+}
+
+.theme-contrast-item:hover {
+  background: color-mix(in srgb, var(--ui-danger) 10%, transparent);
+}
+
+/* ---- Sliders dialog ------------------------------------------------------------------------ */
+
+.slider-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.slider-dialog-row {
+  margin: 0;
+  padding: 4px 0;
+  border: none;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.slider-dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 8px 32px;
+}
+
+.slider-dialog-range {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* ---- About dialog -------------------------------------------------------------------------- */
+
+.about {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.about p {
+  margin: 0;
+}
+
+.about a {
+  color: var(--ui-accent);
+}
+
+.about-version {
+  font-family: var(--mono-font);
+  color: var(--ui-text-muted);
+}
+
+.about-thanks summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.about-thanks ul,
+.about-links {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+/* ---- installable app ----------------------------------------------------------------------- */
+
+.update-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-m);
+  background: var(--md-surface-container-high);
+  color: var(--ui-text);
+  box-shadow: var(--md-elevation-3);
+  white-space: nowrap;
+  animation: toast-in 240ms var(--md-motion);
+}
+
+.update-banner .button {
+  min-width: 0;
+  height: 36px;
+  padding: 0 16px;
+}
+
+.update-banner .icon-button {
+  color: var(--ui-text-muted);
+}
+
+.install-steps {
+  margin: 0 0 8px;
+  padding-left: 22px;
+  line-height: 24px;
+}
+
+.about-links a {
+  display: inline-block;
+  padding: 4px 0;
+}
+
+/* ---- Model dialog -------------------------------------------------------------------------- */
+
+.model-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.model-dialog-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.model-dialog-wide {
+  grid-column: 1 / -1;
+}
+
+.model-dialog-textarea {
+  font-family: var(--mono-font);
+  resize: vertical;
+}
+
+/* ---- subcircuits: pin layout dialog, viewing/editing bar ---------------------------------- */
+
+.dialog-content.subcircuit-dialog {
+  top: 5%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.subcircuit-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.subcircuit-canvas {
+  width: min(400px, 100%, 40vh);
+  aspect-ratio: 1;
+  align-self: center;
+  border-radius: var(--md-shape-s);
+  border: 1px solid var(--ui-border);
+  touch-action: none;
+  cursor: pointer;
+}
+
+.subcircuit-size {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.subcircuit-size .button {
+  min-width: 40px;
+}
+
+.subcircuit-size .field-label + .button {
+  margin-left: 4px;
+}
+
+.subcircuit-size .button + .field-label {
+  margin-left: 12px;
+}
+
+.subcircuit-bar {
+  position: absolute;
+  z-index: 7;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  max-width: calc(100% - 24px);
+  padding: 4px 4px 4px 16px;
+  border-radius: var(--md-shape-l);
+  background: var(--md-surface-container-highest);
+  box-shadow: var(--md-elevation-2);
+}
+
+.subcircuit-manager-list {
+  width: 100%;
+  height: auto;
+  padding: 4px;
+}
+
+/* ---- teaching tools: the drawing toolbar ------------------------------------------------- */
+
+.teach-bar {
+  position: absolute;
+  z-index: 7;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+  max-width: calc(100% - 24px);
+  padding: 4px 8px;
+  border-radius: var(--md-shape-l);
+  background: var(--md-surface-container-highest);
+  box-shadow: var(--md-elevation-2);
+  animation: fade-in 150ms var(--md-motion);
+}
+
+/* on a phone, along the bottom of the canvas, clear of the Sliders card in the top corner */
+@media (max-width: 719px) {
+  .teach-bar {
+    top: auto;
+    bottom: 12px;
+  }
+}
+
+.teach-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.teach-bar .icon-button[aria-pressed='true'] {
+  color: var(--ui-surface);
+  background: var(--ui-accent);
+}
+
+.teach-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--ui-border);
+  cursor: pointer;
+}
+
+.teach-swatch[aria-checked='true'] {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+.teach-bar .button {
+  height: 36px;
+}
+
+.icon-button[aria-pressed='true'][data-testid='box-select-toggle'],
+.icon-button[aria-pressed='true'][data-testid='draw-toggle'] {
+  color: var(--ui-accent);
+}
+
+/* controls only a touch screen needs (a mouse drag already selects) */
+@media not (any-pointer: coarse) {
+  .touch-only {
+    display: none;
+  }
+}
+
+/* ---- export image and parts list ---------------------------------------------------------- */
+
+.export-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.export-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 24px;
+  margin: 8px 0;
+}
+
+.export-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  max-height: 46vh;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-s);
+  background: var(--md-surface-container-low);
+}
+
+.export-preview[data-checkered] {
+  background: repeating-conic-gradient(var(--md-surface-container-high) 0 25%, transparent 0 50%) 0
+    0 / 16px 16px;
+}
+
+.export-preview img {
+  max-width: 100%;
+  max-height: calc(46vh - 24px);
+  object-fit: contain;
+}
+
+.parts-table-wrap {
+  max-height: 50vh;
+  overflow: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-s);
+}
+
+.parts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.parts-table th,
+.parts-table td {
+  padding: 6px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.parts-table th {
+  position: sticky;
+  top: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ui-text-muted);
+  background: var(--md-surface-container-high);
+}
+
+.parts-table tfoot td {
+  border-bottom: none;
+  color: var(--ui-text-muted);
+}
+
+.parts-table .parts-count {
+  width: 3em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.parts-table .parts-value {
+  font-family: var(--mono-font);
+  white-space: nowrap;
+}
+
+.parts-table .parts-details {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .export-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.csv-columns {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 14px;
+}
+
+.csv-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-s);
+}
+
+.csv-heading {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.csv-section .dialog-description {
+  margin: 0;
+}
+
+.csv-record {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.csv-record .field {
+  flex: 0 1 200px;
+}
+
+.csv-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.csv-status-text {
+  font-family: var(--mono-font);
+  font-size: 13px;
+  white-space: pre;
+}
+
+.csv-status-note {
+  font-size: 13px;
+  color: var(--ui-text-muted);
+}
+
+.sweep-frequency {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.sweep-frequency-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  white-space: pre;
+}
+
+.sweep-frequency-head .segmented {
+  font-family: var(--font);
+  font-size: 12px;
+}
+
+.sweep-frequency-head .segmented-button {
+  min-height: 28px;
+  padding: 0 10px;
+}
+
+@media (max-width: 600px) {
+  .timeline {
+    margin: 8px 8px 0;
+    padding: 2px 4px;
+    gap: 2px;
+  }
+}
+
+/* narrow phones: with Rewind the run controls only fit in one row when Run is an icon, as on the
+   landscape rail (its name stays as the tooltip) */
+@media (max-width: 440px) {
+  .control-bar > .control-group > .button-filled {
+    min-width: 0;
+    width: 48px;
+    padding: 0;
+  }
+
+  .run-label {
+    display: none;
+  }
+}
+
+/* ---- crash screen -------------------------------------------------------------------------- */
+
+.crash-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 16px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  user-select: text;
+}
+
+.crash-card {
+  width: min(100%, 440px);
+  padding: 24px;
+  border-radius: var(--md-shape-xl);
+  background: var(--md-surface-container-high);
+  box-shadow: var(--md-elevation-3);
+}
+
+.crash-card h1 {
+  margin: 0 0 12px;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 32px;
+}
+
+.crash-card p {
+  margin: 0 0 12px;
+  color: var(--ui-text-muted);
+}
+
+.crash-detail {
+  margin: 0 0 16px;
+  max-height: 120px;
+  overflow: auto;
+  padding: 8px 12px;
+  border-radius: var(--md-shape-s);
+  background: var(--md-error-container);
+  font-family: var(--mono-font);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- what a load skipped ----------------------------------------------------------------- */
+
+.load-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.load-issue-group p {
+  margin: 0;
+}
+
+.load-issue-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.load-issue-title .icon {
+  flex: none;
+  color: var(--ui-accent);
+}
+
+.load-issue-count {
+  color: var(--ui-text-muted);
+  font-family: var(--mono-font);
+  font-size: 13px;
+}
+
+.load-issue-records {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.load-issue-where {
+  color: var(--ui-text-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.load-issue-record {
+  display: block;
+  max-height: 64px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: var(--md-shape-xs);
+  background: color-mix(in srgb, var(--ui-text) 8%, transparent);
+  font-family: var(--mono-font);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.load-issues-dialog .dialog-buttons .button {
+  min-width: 0;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+
+.load-issues-dialog .dialog-buttons .button-primary {
+  padding: 0 28px;
+}
+
+.load-issue-more {
+  margin-top: 4px;
+  color: var(--ui-text-muted);
+}
+
+/* ---- what's new and suggestions ------------------------------------------------------------ */
+
+.whats-new-version {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.whats-new-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.whats-new-list li + li {
+  margin-top: 4px;
+}
+
+.feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feedback-form .text-area {
+  resize: vertical;
+}
+
+/* formula box insert buttons and LaTeX legend (docs/deviations/formula-boxes.md) */
+.formula-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.formula-tools-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.formula-tool {
+  min-width: 32px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.formula-tool:hover {
+  border-color: var(--ui-accent);
+}
+
+.formula-tool-mono {
+  font-family: var(--mono-font);
+  font-size: 12px;
+}
+
+.formula-legend {
+  font-size: 12px;
+  color: var(--ui-text-muted);
+}
+
+.formula-legend summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.formula-legend table {
+  margin: 4px 0;
+  border-collapse: collapse;
+}
+
+.formula-legend td {
+  padding: 2px 8px 2px 0;
+  vertical-align: top;
+}
+
+.formula-legend-tex {
+  font-family: var(--mono-font);
+  color: var(--ui-text);
+  white-space: pre;
+}
+
+/* ---- editor: radial wheel ------------------------------------------------------------------ */
+
+/* a point at the wheel's centre; everything in it is placed from there */
+.radial-wheel {
+  position: fixed;
+  z-index: 40;
+  width: 1px;
+  height: 1px;
+  touch-action: none;
+  user-select: none;
+  animation: radial-wheel-in 120ms var(--md-motion);
+}
+
+@keyframes radial-wheel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radial-wheel {
+    animation: none;
+  }
+}
+
+.radial-wheel-disc {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  overflow: visible;
+  filter: drop-shadow(
+    0 2px 6px color-mix(in srgb, var(--ui-text) calc(var(--md-shadow-strength) / 2), transparent)
+  );
+}
+
+.radial-wheel-base {
+  fill: var(--md-surface-container-high);
+  stroke: var(--ui-border);
+  stroke-width: 1;
+}
+
+.radial-wheel-lit {
+  fill: var(--md-secondary-container);
+}
+
+.radial-wheel-slot {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.radial-wheel-slot[data-lit] {
+  background: transparent;
+}
+
+.radial-wheel-hub {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--ui-text-muted);
+  background: var(--md-surface-container-highest);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-full);
+  cursor: pointer;
+}
+
+.radial-wheel-hub:hover {
+  color: var(--ui-text);
+}
+
+/* the lit part's name under the wheel */
+.radial-wheel-name {
+  position: absolute;
+  left: 0;
+  transform: translateX(-50%);
+  max-width: 240px;
+  min-height: 20px;
+  padding: 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ui-text);
+  background: var(--md-surface-container-high);
+  border-radius: var(--md-shape-full);
+  pointer-events: none;
+}
+
+.radial-wheel-name:empty {
+  visibility: hidden;
+}
+
+/* touch: what the long press menu on empty canvas had */
+.radial-wheel-actions {
+  position: absolute;
+  left: 0;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  background: var(--md-surface-container-high);
+  border-radius: var(--md-shape-full);
+  box-shadow: var(--md-elevation-2);
+}
+
+.radial-wheel-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 40px;
+  padding: 0;
+  color: var(--ui-text);
+  background: transparent;
+  border: none;
+  border-radius: var(--md-shape-full);
+  cursor: pointer;
+}
+
+.radial-wheel-action:hover {
+  background: color-mix(in srgb, var(--ui-text) 8%, transparent);
+}
+
+.radial-wheel-action:disabled {
+  color: var(--ui-text-muted);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.radial-wheel-actions-divider {
+  align-self: center;
+  width: 1px;
+  height: 24px;
+  margin: 0 2px;
+  background: var(--ui-border);
+}
+
+/* the part search at the pointer (Space, the wheel's search button, Replace with…) */
+.part-search {
+  position: fixed;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--md-surface-container-high);
+  border-radius: var(--md-shape-m);
+  box-shadow: var(--md-elevation-2);
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--ui-text);
+  animation: radial-wheel-in 120ms var(--md-motion);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .part-search {
+    animation: none;
+  }
+}
+
+.part-search-field {
+  flex: none;
+  background: var(--md-surface-container-highest);
+  box-shadow: inset 0 0 0 1px var(--ui-border);
+}
+
+.part-search-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.part-search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 8px;
+  border-radius: var(--md-shape-s);
+  cursor: pointer;
+}
+
+.part-search-item[aria-selected='true'] {
+  background: color-mix(in srgb, var(--ui-text) 10%, transparent);
+}
+
+.part-search-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.part-search-key {
+  font-family: var(--mono-font);
+  font-size: 12px;
+  color: var(--ui-text-muted);
+}
+
+.part-search-empty {
+  padding: 8px;
+  color: var(--ui-text-muted);
+}
+
+/* ---- File > My circuits and the Save dialog ------------------------------------------------ */
+
+.save-target {
+  display: flex;
+  margin-bottom: 16px;
+}
+
+.save-target button {
+  flex: 1;
+  height: 40px;
+}
+
+.save-note {
+  margin: 8px 4px 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ui-text-muted);
+}
+
+.my-circuits-dialog {
+  display: flex;
+  flex-direction: column;
+  top: 8vh;
+  width: min(860px, calc(100vw - 32px));
+  max-height: 84vh;
+}
+
+.my-circuits-search {
+  flex: none;
+  margin-bottom: 12px;
+}
+
+.my-circuits-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -8px;
+  padding: 4px 8px;
+}
+
+.my-circuits-empty {
+  margin: 24px 0;
+  text-align: center;
+  color: var(--ui-text-muted);
+}
+
+.my-circuits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.my-circuit {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--md-surface-container-low);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--md-shape-m);
+}
+
+.my-circuit-current {
+  border-color: var(--ui-accent);
+}
+
+.my-circuit-open {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.my-circuit-thumb {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: contain;
+  background: var(--canvas-background, var(--ui-surface));
+  color: var(--ui-text-muted);
+}
+
+.my-circuit-open:hover .my-circuit-thumb,
+.my-circuit-open:focus-visible .my-circuit-thumb {
+  filter: brightness(1.06);
+}
+
+.my-circuit-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 56px;
+  padding: 6px 4px 6px 12px;
+}
+
+.my-circuit-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.my-circuit-name {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.my-circuit-date {
+  font-size: 12px;
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.my-circuit-more {
+  flex: none;
+  background: transparent;
+}
+
+.my-circuit-rename {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  font-size: 14px;
+  padding: 0 8px;
+}
+
+.my-circuit-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 10px;
+  font-size: 14px;
+}
+
+.my-circuit-confirm-text {
+  overflow-wrap: anywhere;
+}
+
+.my-circuit-confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 719px) {
+  .my-circuits-dialog {
+    top: 4vh;
+    max-height: 92vh;
+    padding: 16px;
+  }
+
+  .my-circuits-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+  }
+}

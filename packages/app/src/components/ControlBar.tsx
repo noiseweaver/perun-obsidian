@@ -1,0 +1,538 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2026 Perun contributors
+
+import { NOMINAL_TEMPERATURE, getUnitText, parseUnits } from '@perun/elements';
+import * as Popover from '@radix-ui/react-popover';
+import * as Slider from '@radix-ui/react-slider';
+import * as Tooltip from '@radix-ui/react-tooltip';
+import { useRef, useState, type ReactNode } from 'react';
+import { openDialog } from '../commands.ts';
+import { controller } from '../SimController.ts';
+import { useApp } from '../store.ts';
+import { Icon } from './Icon.tsx';
+import { dismissLoadIssues } from './LoadIssuesDialog.tsx';
+import { t, tf } from '../i18n.ts';
+import {
+  FACTOR_WIDTH,
+  SPEED_MAX,
+  SPEED_MIN,
+  SPEED_STEP,
+  paceOf,
+  percentText,
+  speedForSteps,
+  stepsPerSecond,
+  stepsText,
+} from '../speed.ts';
+
+function LabeledSlider(props: {
+  label: string;
+  min: number;
+  max: number;
+  step?: number;
+  value: number;
+  onChange: (v: number) => void;
+  testId: string;
+}) {
+  return (
+    <label className="slider-field">
+      <span className="slider-label">{t(props.label)}</span>
+      <SliderControl {...props} />
+    </label>
+  );
+}
+
+function SliderControl(props: {
+  label: string;
+  min: number;
+  max: number;
+  step?: number;
+  value: number;
+  onChange: (v: number) => void;
+  testId: string;
+}) {
+  return (
+    <Slider.Root
+      className="slider"
+      min={props.min}
+      max={props.max}
+      step={props.step ?? 1}
+      value={[props.value]}
+      onValueChange={(v) => props.onChange(v[0] ?? props.value)}
+      data-testid={props.testId}
+    >
+      <Slider.Track className="slider-track">
+        <Slider.Range className="slider-range" />
+      </Slider.Track>
+      <Slider.Thumb className="slider-thumb" aria-label={t(props.label)} />
+    </Slider.Root>
+  );
+}
+
+/**
+ * The simulation speed: a slider in quarter notches of upstream's scale, and the same speed in
+ * steps per second to read or type (Enter or leaving the field applies it, Escape drops it).
+ */
+function SimSpeedField() {
+  const speed = useApp((s) => s.speed);
+  const [draft, setDraft] = useState<string | null>(null);
+  // Escape drops the typed text; the blur that follows must not apply it
+  const cancelled = useRef(false);
+  const shown = stepsText(stepsPerSecond(speed));
+  const setSpeed = (v: number) => useApp.setState({ speed: v });
+  const apply = () => {
+    if (draft === null || cancelled.current) return;
+    setDraft(null);
+    let steps: number;
+    try {
+      steps = parseUnits(draft);
+    } catch {
+      return;
+    }
+    if (Number.isFinite(steps)) setSpeed(speedForSteps(steps));
+  };
+  return (
+    <div className="slider-field">
+      <div className="slider-label-row">
+        <span className="slider-label" id="sim-speed-label">
+          {t('Simulation speed')}
+        </span>
+        <span className="speed-entry">
+          <input
+            className="speed-input"
+            value={draft ?? shown}
+            inputMode="decimal"
+            enterKeyHint="done"
+            aria-label={t('Steps per second')}
+            data-testid="speed-input"
+            onFocus={(e) => {
+              cancelled.current = false;
+              setDraft(shown);
+              e.target.select();
+            }}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={apply}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              } else if (e.key === 'Escape') {
+                cancelled.current = true;
+                setDraft(null);
+                e.currentTarget.blur();
+              }
+            }}
+          />
+          <span className="speed-unit">{t('steps/s')}</span>
+        </span>
+      </div>
+      <SliderControl
+        label="Simulation speed"
+        min={SPEED_MIN}
+        max={SPEED_MAX}
+        step={SPEED_STEP}
+        value={speed}
+        // whole multiples of the step, without float noise
+        onChange={(v) => setSpeed(Math.round(v / SPEED_STEP) * SPEED_STEP)}
+        testId="speed-slider"
+      />
+    </div>
+  );
+}
+
+/**
+ * How fast the simulation runs against real time: measured over the last second while running,
+ * else what the speed and time step ask for. The measurement wobbles by a step or so a second, so
+ * within 3 % of what was asked it shows that; `behind` says the computer can't keep up.
+ */
+function usePace(): { ratio: number; asked: number; behind: boolean } {
+  const speed = useApp((s) => s.speed);
+  const maxTimeStep = useApp((s) => s.status.maxTimeStep);
+  const realTime = useApp((s) => s.status.realTime);
+  const behind = useApp((s) => s.status.behind);
+  const asked = stepsPerSecond(speed) * maxTimeStep;
+  const off = realTime !== null && Math.abs(realTime - asked) > 0.03 * asked;
+  return { ratio: off ? realTime : asked, asked, behind: off && behind };
+}
+
+/**
+ * "1.21k× slower", "3.20× faster" or "≈ real time", padded to the longest of the three in the
+ * interface language, so the text keeps its width as the speed changes.
+ */
+export function paceText(ratio: number): string {
+  const pace = paceOf(ratio);
+  const slower = (n: string) => tf('{n}× slower', { n });
+  const faster = (n: string) => tf('{n}× faster', { n });
+  const real = t('≈ real time');
+  const blank = ' '.repeat(FACTOR_WIDTH);
+  const width = Math.max(slower(blank).length, faster(blank).length, real.length);
+  const text =
+    pace.kind === 'real'
+      ? real
+      : pace.kind === 'faster'
+        ? faster(pace.factor)
+        : slower(pace.factor);
+  return text.padEnd(width);
+}
+
+/** The speed against real time under the speed slider, as a factor and a percentage. */
+function PaceField() {
+  const { ratio, asked, behind } = usePace();
+  return (
+    <div className="slider-field pace-field" data-testid="pace-field">
+      <span className="slider-label">{t('Compared with real time')}</span>
+      <span className="pace-value">
+        <span className="readout">{paceText(ratio)}</span>
+        <span className="readout">{percentText(ratio)} %</span>
+      </span>
+      {behind && (
+        <span className="pace-note" data-testid="pace-behind">
+          {tf("Your computer can't keep up: the slider asks for {n}.", {
+            n: paceText(asked).trim(),
+          })}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Turns the teaching tools (pencil, laser, eraser) on and off. */
+function DrawButton() {
+  const on = useApp((s) => s.teach.tool !== null);
+  const label = on ? 'Stop drawing' : 'Draw on the circuit';
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => controller.setTeachTool(on ? null : 'pencil')}
+          aria-label={t(label)}
+          aria-pressed={on}
+          data-testid="draw-toggle"
+        >
+          <Icon name="edit" />
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content className="tooltip" sideOffset={6}>
+          {t(label)}
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
+
+/** Shows and hides the rewind timeline (PLAN.md Phase 20). */
+function RewindButton() {
+  const open = useApp((s) => s.rewind.open);
+  const label = open ? 'Hide the timeline' : 'Rewind';
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => controller.setRewindOpen(!open)}
+          aria-label={t(label)}
+          aria-pressed={open}
+          data-testid="rewind-toggle"
+        >
+          <Icon name="history" />
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content className="tooltip" sideOffset={6}>
+          {t(label)}
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
+
+/** Touch screens pan with one finger; this turns a one-finger drag into a selection box. */
+function BoxSelectButton() {
+  const on = useApp((s) => s.boxSelect);
+  const label = on ? 'Drag to pan' : 'Drag to select';
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <button
+          type="button"
+          className="icon-button touch-only"
+          onClick={() => useApp.setState({ boxSelect: !on })}
+          aria-label={t(label)}
+          aria-pressed={on}
+          data-testid="box-select-toggle"
+        >
+          <Icon name="selectAll" />
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content className="tooltip" sideOffset={6}>
+          {t(label)}
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
+
+/** An icon button with a plain tooltip. */
+function IconButton(props: {
+  label: string;
+  onClick: () => void;
+  testId?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={props.onClick}
+          aria-label={t(props.label)}
+          data-testid={props.testId}
+        >
+          {props.children}
+        </button>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content className="tooltip" sideOffset={6}>
+          {t(props.label)}
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
+
+/**
+ * The simulation and current speed sliders, in a popover: upstream keeps them in its sidebar all
+ * the time, but they are set now and then rather than used constantly.
+ */
+function SpeedButton() {
+  const currentSpeed = useApp((s) => s.currentSpeed);
+  const showPace = useApp((s) => s.settings.realTimeReadout);
+  return (
+    <Popover.Root>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>
+          <Popover.Trigger asChild>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t('Speed')}
+              data-testid="speed-button"
+            >
+              <Icon name="speed" />
+            </button>
+          </Popover.Trigger>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Content className="tooltip" sideOffset={6}>
+            {t('Speed')}
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+      <Popover.Portal>
+        <Popover.Content
+          className="speed-popover"
+          side="top"
+          align="start"
+          sideOffset={8}
+          collisionPadding={8}
+          data-testid="speed-popover"
+          // Escape in the typed speed drops the edit only; a second one closes the popover
+          onEscapeKeyDown={(e) => {
+            if (document.activeElement?.classList.contains('speed-input') === true)
+              e.preventDefault();
+          }}
+        >
+          <SimSpeedField />
+          {showPace && <PaceField />}
+          <LabeledSlider
+            label="Current speed"
+            min={1}
+            max={99}
+            value={currentSpeed}
+            onChange={(v) => useApp.setState({ currentSpeed: v })}
+            testId="current-slider"
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+/**
+ * Simulation time with three decimals in the largest unit below 1000, so the digit count only
+ * changes when the unit does (upstream's getUnitText drops trailing digits, which jitters).
+ */
+export function timeText(t: number): string {
+  const units: [number, string][] = [
+    [1, 's'],
+    [1e-3, 'ms'],
+    [1e-6, 'μs'],
+    [1e-9, 'ns'],
+  ];
+  for (const [scale, unit] of units)
+    if (Math.abs(t) >= scale) return `${(t / scale).toFixed(3).padStart(7)} ${unit.padStart(2)}`;
+  return t === 0 ? '  0.000  s' : `${(t / 1e-12).toFixed(3).padStart(7)} ps`;
+}
+
+/**
+ * The circuit temperature in a fixed width (sign, three digits, one decimal), so the bar does not
+ * shift when it changes.
+ */
+export function temperatureText(c: number): string {
+  const s = (Object.is(Math.round(c * 10), -0) ? 0 : c).toFixed(1);
+  return `T = ${s.padStart(6)} °C`;
+}
+
+/** The speed against real time beside the time readout, in the accent while the computer lags. */
+function PaceReadout() {
+  const { ratio, asked, behind } = usePace();
+  return (
+    <span
+      className={`readout readout-pace ${behind ? 'readout-behind' : ''}`}
+      title={
+        behind
+          ? tf("Your computer can't keep up: the slider asks for {n}.", {
+              n: paceText(asked).trim(),
+            })
+          : t('How fast the simulation runs compared with real time')
+      }
+      data-testid="pace-readout"
+    >
+      {paceText(ratio)}
+    </span>
+  );
+}
+
+/**
+ * Bottom bar: run controls, speed sliders, the time readouts and messages (upstream shows these
+ * in the canvas info area).
+ */
+export function ControlBar() {
+  const running = useApp((s) => s.running);
+  const rewound = useApp((s) => !s.rewind.live);
+  const runLabel = running ? 'Stop' : rewound ? 'Replay' : 'Run';
+  const {
+    t: simTime,
+    timeStep,
+    temperature,
+    thermal,
+    stopMessage,
+    badConnections,
+  } = useApp((s) => s.status);
+  const skipped = useApp((s) => s.loadIssues.length);
+  const showPace = useApp((s) => s.settings.realTimeReadout);
+  const error = useApp((s) => s.error);
+  const stopped = stopMessage !== null;
+
+  return (
+    <footer className="control-bar">
+      <div className="control-group">
+        <button
+          type="button"
+          className={`button button-filled ${running ? '' : 'button-paused'}`}
+          onClick={() => controller.setRunning(!running)}
+          disabled={stopped && !running && !rewound}
+          data-testid="run-stop"
+          aria-pressed={running}
+          title={t(runLabel)}
+        >
+          <Icon
+            key={running ? 'pause' : 'play'}
+            name={running ? 'pause' : 'play'}
+            className="icon icon-swap"
+          />
+          <span className="run-label">{t(runLabel)}</span>
+        </button>
+        <IconButton label="Reset" onClick={() => controller.reset()} testId="reset">
+          <Icon name="replay" />
+        </IconButton>
+        <RewindButton />
+        <IconButton label="Centre the circuit" onClick={() => controller.fit()}>
+          <Icon name="fit" />
+        </IconButton>
+        <SpeedButton />
+        <BoxSelectButton />
+        <DrawButton />
+      </div>
+
+      <div className="status">
+        {stopMessage !== null && (
+          <span className="chip chip-error" data-testid="stop-message">
+            <Icon name="error" size={16} />
+            {stopMessage}
+          </span>
+        )}
+        {error !== null && (
+          <span className="chip chip-error" data-testid="load-error">
+            <Icon name="error" size={16} />
+            {error}
+          </span>
+        )}
+        {badConnections > 0 && (
+          <span className="chip">
+            <Icon name="warning" size={16} />
+            {badConnections}
+            {t(badConnections === 1 ? ' bad connection' : ' bad connections')}
+          </span>
+        )}
+        {skipped > 0 && (
+          <span className="chip chip-notice" data-testid="load-warnings">
+            <button
+              type="button"
+              className="chip-notice-main"
+              title={t('Show what was skipped and why')}
+              onClick={() => openDialog('loadIssues')}
+            >
+              <Icon name="warning" size={16} />
+              {tf(
+                skipped === 1 ? '{n} unsupported item skipped' : '{n} unsupported items skipped',
+                {
+                  n: skipped,
+                },
+              )}
+            </button>
+            <button
+              type="button"
+              className="chip-notice-close"
+              aria-label={t('Hide notice')}
+              title={t('Hide notice')}
+              data-testid="load-warnings-dismiss"
+              onClick={dismissLoadIssues}
+            >
+              <Icon name="close" size={16} />
+            </button>
+          </span>
+        )}
+        <span className="readout readout-time" data-testid="sim-time">
+          t = {timeText(simTime)}
+        </span>
+        {showPace && <PaceReadout />}
+        <button
+          type="button"
+          className="readout readout-step readout-button"
+          title={t('Change the time step')}
+          data-testid="time-step"
+          onClick={() => openDialog('simSettings')}
+        >
+          {t('time step = ')}
+          {getUnitText(timeStep, 's')}
+        </button>
+        {(thermal || temperature !== NOMINAL_TEMPERATURE) && (
+          <button
+            type="button"
+            className="readout readout-temp readout-button"
+            title={t('Change the circuit temperature')}
+            data-testid="sim-temperature-readout"
+            onClick={() => openDialog('simSettings')}
+          >
+            {temperatureText(temperature)}
+          </button>
+        )}
+      </div>
+    </footer>
+  );
+}

@@ -1,0 +1,600 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Ported from CircuitJS1 src/com/lushprojects/circuitjs1/client/CircuitElm.java (master) at
+// 5a707168778216bb6ed01bfdd62e8bbf7ae0a032: construction, positioning and XML dump. The
+// simulation half is SimElement in @perun/engine.
+// Copyright (C) Paul Falstad and Iain Sharp; port Copyright (C) Perun contributors.
+// This program is free software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation, either version 2 of the
+// License, or (at your option) any later version. See LICENSE.
+
+import { FindPathInfo, PathType, Point, SimElement, type Simulation } from '@perun/engine';
+import type { EditInfo } from './edit/EditInfo.ts';
+import { UNITS_A, UNITS_V, UNITS_W, VAL_CURRENT, VAL_POWER } from './scope/constants.ts';
+import { getCurrentDText, getVoltageDText } from './view/units.ts';
+import type { StringTokenizer } from './StringTokenizer.ts';
+import type { WireRouter } from './WireRouter.ts';
+import type { XmlAttrReader, XmlAttrWriter, XmlDocWriter } from './xml.ts';
+import { formatBindings, parseBindings } from './params.ts';
+import type { Thermal } from './thermal.ts';
+
+/** Placeholder for leads an element never sets (upstream leaves them null). */
+export const NO_LEAD: Point = Object.freeze(new Point()) as Point;
+
+/**
+ * Base of every element class. Upstream has two constructors per element: one for a new element
+ * placed by the user, one that reads the text format. Here construction only sets the position;
+ * `initNew()` and `undump()` hold what those two constructors do (see ElementType).
+ */
+export abstract class CircuitElm extends SimElement {
+  /**
+   * Fields bound to parameter expressions, by edit item (`{R*2}` in the property panel). Not in
+   * upstream (DEVIATIONS.md): saved as the extra XML attribute `px`, only when there are any.
+   */
+  paramExprs: Map<number, string> | null = null;
+
+  /**
+   * The part's heat path for self-heating (thermal.ts), null for parts that don't heat. Not in
+   * upstream (DEVIATIONS.md): saved as the extra XML attributes `rth` and `tth`, only when they
+   * differ from the defaults.
+   */
+  thermal: Thermal | null = null;
+
+  /** Defaults of a newly placed element (upstream `CircuitElm(int xx, int yy)` constructors). */
+  initNew(): void {}
+
+  /** Read the rest of a text-format line (upstream `CircuitElm(xa, ya, xb, yb, f, st)`). */
+  undump(_st: StringTokenizer): void {}
+
+  getDefaultFlags(): number {
+    return 0;
+  }
+
+  /** XML tag: the dump type letter, else the class name without "Elm". */
+  getXmlDumpType(): string {
+    const t = this.getDumpType();
+    if (t > 64 && t < 127) return String.fromCharCode(t);
+    return this.getClassName().replace('Elm', '');
+  }
+
+  dumpXml(w: XmlAttrWriter): void {
+    w.dumpAttr('x', `${this.x} ${this.y} ${this.x2} ${this.y2}`);
+    // always written: some elements set nonzero flags in their constructor
+    w.dumpAttr('f', this.flags);
+    if (this.paramExprs !== null) w.dumpAttr('px', formatBindings(this.paramExprs));
+    const th = this.thermal;
+    if (th !== null && !th.isDefault()) {
+      w.dumpAttr('rth', th.resistance);
+      w.dumpAttr('tth', th.timeConstant);
+    }
+  }
+
+  /** Simulation state saved after the settings (capacitor voltage, inductor current). */
+  dumpXmlState(_w: XmlAttrWriter): void {}
+
+  undumpXml(r: XmlAttrReader): void {
+    this.flags = r.parseIntAttr('f', this.flags);
+    this.paramExprs = parseBindings(r.parseStringAttr('px', null));
+    const th = this.thermal;
+    if (th !== null) {
+      const rth = r.parseDoubleAttr('rth', th.resistance);
+      const tth = r.parseDoubleAttr('tth', th.timeConstant);
+      if (rth > 0) th.resistance = rth;
+      if (tth >= 0) th.timeConstant = tth;
+    }
+  }
+
+  /**
+   * Model and other records this element needs written before it (upstream elements append
+   * them to the document from inside `dumpXml`, so they land just before the element).
+   */
+  dumpXmlModels(_doc: XmlDocWriter): void {}
+
+  /** Logic high level, pushed down from a subcircuit's setting (upstream no-op default). */
+  setHighVoltage(_hv: number): void {}
+
+  /**
+   * Voltages read from a file (transistor junction voltages, op-amp inputs) go into the element's
+   * own `volts`, as upstream's loaders write them, and hold until the first solve.
+   */
+  protected setLoadedVoltage(n: number, v: number): void {
+    while (this.volts.length < this.getNodeCount()) this.volts.push(0);
+    this.volts[n] = v;
+  }
+
+  /** Set while the editor is placing this element (upstream `isCreating()`). */
+  creating = false;
+  isCreating(): boolean {
+    return this.creating;
+  }
+
+  /** Upstream `useSmallGrid()`: the circuit uses the 8-unit grid. */
+  useSmallGrid(): boolean {
+    return this.sim.gridSize === 8;
+  }
+
+  /** Upstream `CirSim.getrand(x)`: a non-negative int below x from the shared Random. */
+  getrand(x: number): number {
+    let q = this.sim.random.nextInt();
+    if (q < 0) q = -q | 0;
+    return q % x;
+  }
+
+  /**
+   * Ends of the element body (upstream `lead1`, `lead2`), for elements whose posts use them.
+   * `NO_LEAD` until set, where upstream's are null.
+   */
+  lead1: Point = NO_LEAD;
+  lead2: Point = NO_LEAD;
+
+  /** Upstream `calcLeads`: a body `len` long centred between the points. */
+  calcLeads(len: number): void {
+    if (this.dn < len || len === 0) {
+      this.lead1 = this.point1;
+      this.lead2 = this.point2;
+      return;
+    }
+    this.lead1 = this.interpPoint(this.point1, this.point2, (this.dn - len) / (2 * this.dn));
+    this.lead2 = this.interpPoint(this.point1, this.point2, (this.dn + len) / (2 * this.dn));
+  }
+
+  /**
+   * Upstream `adjustLeadsToGrid`: move the leads so the body centre is on the grid. Like
+   * upstream it moves the points in place, which moves the posts too when the leads are them.
+   */
+  adjustLeadsToGrid(flipX: boolean, flipY: boolean): void {
+    const cx = Math.trunc((this.point1.x + this.point2.x) / 2);
+    const cy = Math.trunc((this.point1.y + this.point2.y) / 2);
+    // when flipping, it changes the rounding direction.  need to adjust for this
+    const roundx = flipX ? 1 : -1;
+    const roundy = flipY ? 1 : -1;
+    const adjx = this.snapGrid(cx + roundx) - cx;
+    const adjy = this.snapGrid(cy + roundy) - cy;
+    this.lead1.x += adjx;
+    this.lead1.y += adjy;
+    this.lead2.x += adjx;
+    this.lead2.y += adjy;
+  }
+
+  newPointArray(n: number): Point[] {
+    return Array.from({ length: n }, () => new Point());
+  }
+
+  /** Upstream `comparePair`: is (x1, x2) the pair (y1, y2) in either order? */
+  comparePair(x1: number, x2: number, y1: number, y2: number): boolean {
+    return (x1 === y1 && x2 === y2) || (x1 === y2 && x2 === y1);
+  }
+
+  /** Upstream `interpPoint2`: points fraction f from a to b, offset +g and -g across the line. */
+  interpPoint2(a: Point, b: Point, f: number, g: number): [Point, Point] {
+    const gx = b.y - a.y;
+    const gy = a.x - b.x;
+    g /= Math.sqrt(gx * gx + gy * gy);
+    return [
+      new Point(
+        Math.floor(a.x * (1 - f) + b.x * f + g * gx + 0.48),
+        Math.floor(a.y * (1 - f) + b.y * f + g * gy + 0.48),
+      ),
+      new Point(
+        Math.floor(a.x * (1 - f) + b.x * f - g * gx + 0.48),
+        Math.floor(a.y * (1 - f) + b.y * f - g * gy + 0.48),
+      ),
+    ];
+  }
+
+  /**
+   * Upstream `CircuitElm.validateRailNode`: a one-terminal source shorted to ground stops the
+   * simulation (RailElm overrides this to add a small resistance instead).
+   */
+  validateRailNode(n: number): boolean {
+    const fpi = new FindPathInfo(PathType.VOLTAGE, this, this.getNode(n), this.sim);
+    if (fpi.findPath(this.sim.ground)) {
+      this.sim.stop('Path to ground with no resistance!', this);
+      return false;
+    }
+    return true;
+  }
+
+  setPosition(x: number, y: number, x2: number, y2: number): void {
+    this.x = x;
+    this.y = y;
+    this.x2 = x2;
+    this.y2 = y2;
+    this.setPoints();
+  }
+
+  // ---- editing (upstream CircuitElm placement, move and flip methods) ----------------------
+
+  /** Selected in the editor. Upstream keeps selection on the element too. */
+  selected = false;
+  /** Posts stay on one horizontal or vertical line (transistors, MOSFETs, op-amps). */
+  noDiagonal = false;
+  /** Handle grabbed by the last `getHandleGrabbedClose` (-1: none). */
+  lastHandleGrabbed = -1;
+
+  /** Upstream `CirSim.snapGrid`, with this element's simulation grid. */
+  snapGrid(x: number): number {
+    const gridSize = this.sim.gridSize;
+    return (x + (gridSize / 2 - 1)) & ~(gridSize - 1);
+  }
+
+  /** Drag the second point to (xx, yy) while the element is being placed. */
+  drag(xx: number, yy: number): void {
+    xx = this.snapGrid(xx);
+    yy = this.snapGrid(yy);
+    if (this.noDiagonal) {
+      if (Math.abs(this.x - xx) < Math.abs(this.y - yy)) xx = this.x;
+      else yy = this.y;
+    }
+    this.x2 = xx;
+    this.y2 = yy;
+    this.setPoints();
+  }
+
+  /** Length used when an element is dropped from the palette instead of dragged out. */
+  getDragLength(): number {
+    return 64;
+  }
+
+  getDragVertical(requestedVertical: boolean): boolean {
+    return requestedVertical;
+  }
+
+  /** Place for palette drag-and-drop with (xa, ya) as the anchor that follows the mouse. */
+  dragPlace(xa: number, ya: number, vertical: boolean): void {
+    vertical = this.getDragVertical(vertical);
+    const len = this.getDragLength();
+    this.x = xa;
+    this.y = ya;
+    this.x2 = xa + (vertical ? 0 : len);
+    this.y2 = ya + (vertical ? len : 0);
+    this.setPoints();
+  }
+
+  swapDragEndpoints(): void {
+    const tx = this.x;
+    const ty = this.y;
+    this.x = this.x2;
+    this.y = this.y2;
+    this.x2 = tx;
+    this.y2 = ty;
+    this.setPoints();
+  }
+
+  move(dx: number, dy: number): void {
+    this.x += dx;
+    this.y += dy;
+    this.x2 += dx;
+    this.y2 += dy;
+    this.setPoints();
+  }
+
+  /** A newly dragged-out element of zero size is not created. */
+  creationFailed(): boolean {
+    return this.x === this.x2 && this.y === this.y2;
+  }
+
+  /** Would moving by (dx, dy) put this element exactly on top of another one? */
+  allowMove(dx: number, dy: number, elements: readonly CircuitElm[]): boolean {
+    const nx = this.x + dx;
+    const ny = this.y + dy;
+    const nx2 = this.x2 + dx;
+    const ny2 = this.y2 + dy;
+    for (const ce of elements) {
+      if (ce.x === nx && ce.y === ny && ce.x2 === nx2 && ce.y2 === ny2) return false;
+      if (ce.x === nx2 && ce.y === ny2 && ce.x2 === nx && ce.y2 === ny) return false;
+    }
+    return true;
+  }
+
+  /** Move one end; refuses to make the element zero length. */
+  movePoint(n: number, dx: number, dy: number): void {
+    const oldx = this.x;
+    const oldy = this.y;
+    const oldx2 = this.x2;
+    const oldy2 = this.y2;
+    if (this.noDiagonal) {
+      if (this.x === this.x2) dx = 0;
+      else dy = 0;
+    }
+    if (n === 0) {
+      this.x += dx;
+      this.y += dy;
+    } else {
+      this.x2 += dx;
+      this.y2 += dy;
+    }
+    if (this.x === this.x2 && this.y === this.y2) {
+      this.x = oldx;
+      this.y = oldy;
+      this.x2 = oldx2;
+      this.y2 = oldy2;
+    }
+    this.setPoints();
+  }
+
+  /** Mirror left-right about x = center2 / 2. */
+  flipX(center2: number, _count: number): void {
+    this.x = center2 - this.x;
+    this.x2 = center2 - this.x2;
+    this.setPoints();
+  }
+
+  /** Mirror top-bottom about y = center2 / 2. */
+  flipY(center2: number, _count: number): void {
+    this.y = center2 - this.y;
+    this.y2 = center2 - this.y2;
+    this.setPoints();
+  }
+
+  /** Mirror about the diagonal x - y = xmy. */
+  flipXY(xmy: number, _count: number): void {
+    const nx = this.y + xmy;
+    const ny = this.x - xmy;
+    const nx2 = this.y2 + xmy;
+    const ny2 = this.x2 - xmy;
+    this.x = nx;
+    this.y = ny;
+    this.x2 = nx2;
+    this.y2 = ny2;
+    this.setPoints();
+  }
+
+  /** Swap the two ends (upstream "Swap Terminals"). */
+  flipPosts(): void {
+    const oldx = this.x;
+    const oldy = this.y;
+    this.x = this.x2;
+    this.y = this.y2;
+    this.x2 = oldx;
+    this.y2 = oldy;
+    this.setPoints();
+  }
+
+  canFlipX(): boolean {
+    return true;
+  }
+  canFlipY(): boolean {
+    return true;
+  }
+  canFlipXY(): boolean {
+    return this.canFlipX() || this.canFlipY();
+  }
+
+  getNumHandles(): number {
+    return this.getPostCount();
+  }
+
+  /** Which end handle is within sqrt(deltaSq) of the point, if the element is at least that long. */
+  getHandleGrabbedClose(xtest: number, ytest: number, deltaSq: number, minSize: number): number {
+    this.lastHandleGrabbed = -1;
+    if (distanceSq(this.x, this.y, this.x2, this.y2) >= minSize) {
+      if (distanceSq(this.x, this.y, xtest, ytest) <= deltaSq) this.lastHandleGrabbed = 0;
+      else if (this.getNumHandles() > 1 && distanceSq(this.x2, this.y2, xtest, ytest) <= deltaSq)
+        this.lastHandleGrabbed = 1;
+    }
+    return this.lastHandleGrabbed;
+  }
+
+  /**
+   * The handle a drag that grabbed no handle moves: the nearer end (upstream `dragPost`'s
+   * choice).
+   */
+  closestHandle(x: number, y: number): number {
+    return distanceSq(this.x, this.y, x, y) > distanceSq(this.x2, this.y2, x, y) ? 1 : 0;
+  }
+
+  /**
+   * Selected by an area drag only when the area holds the whole element, not when it touches it
+   * (upstream BoxElm `selectRect`).
+   */
+  selectsOnlyWhenEnclosed(): boolean {
+    return false;
+  }
+
+  /** Squared distance from the mouse, to pick between overlapping boxes; -1 means not a hit. */
+  getMouseDistance(gx: number, gy: number): number {
+    if (this.getPostCount() === 0)
+      return distanceSq(
+        gx,
+        gy,
+        Math.trunc((this.x2 + this.x) / 2),
+        Math.trunc((this.y2 + this.y) / 2),
+      );
+    return lineDistanceSq(this.x, this.y, this.x2, this.y2, gx, gy);
+  }
+
+  /** Called when the user finishes dragging out a new element. */
+  draggingDone(): void {}
+
+  /**
+   * Mark this element on a routed wire's grid (upstream `addRoutingObstacle`): a straight
+   * element's line is a wire and its body, between the leads, an obstacle.
+   */
+  addRoutingObstacle(router: WireRouter): void {
+    if (this.x === this.x2 || this.y === this.y2) {
+      router.addWire(this.x, this.y, this.x2, this.y2);
+      const leads = this.routingLeads();
+      if (leads !== null) router.addObstacle(leads[0].x, leads[0].y, leads[1].x, leads[1].y);
+    }
+  }
+
+  /** Upstream `addRoutingObstacleWithLeads`: the body is `width` either side of the leads. */
+  addRoutingObstacleWithLeads(router: WireRouter, width: number): void {
+    if (this.x === this.x2 || this.y === this.y2) {
+      router.addWire(this.x, this.y, this.x2, this.y2);
+      const [l1, l2] = this.routingLeads() ?? [this.point1, this.point2];
+      const pa = this.interpPointPerp(l1, l2, 0, width);
+      const pb = this.interpPointPerp(l1, l2, 1, -width);
+      router.addObstacle(pa.x, pa.y, pb.x, pb.y);
+    }
+  }
+
+  /**
+   * The body ends as upstream has them when routing (`lead1`, `lead2`), or null where upstream's
+   * are null. Elements whose leads only their views compute say what upstream's setPoints sets.
+   */
+  routingLeads(): [Point, Point] | null {
+    return this.lead1 !== NO_LEAD && this.lead2 !== NO_LEAD ? [this.lead1, this.lead2] : null;
+  }
+
+  /** What `calcLeads(len)` would set, without setting it. */
+  leadsFor(len: number): [Point, Point] {
+    if (this.dn < len || len === 0) return [this.point1, this.point2];
+    return [
+      this.interpPoint(this.point1, this.point2, (this.dn - len) / (2 * this.dn)),
+      this.interpPoint(this.point1, this.point2, (this.dn + len) / (2 * this.dn)),
+    ];
+  }
+
+  /** Keyboard shortcut that selects this element for placing (a char code), or 0. */
+  getShortcut(): number {
+    return 0;
+  }
+
+  // ---- edit dialog (upstream Editable) ------------------------------------------------------
+
+  /** Property n for the edit panel, or null past the last one. */
+  getEditInfo(_n: number): EditInfo | null {
+    return null;
+  }
+
+  setEditValue(_n: number, _ei: EditInfo): void {}
+
+  /** Upstream `getInfo(arr)[0]`: the element's kind in lower case ("resistor"), or null. */
+  getElmType(): string | null {
+    const info = new Array<string>(10);
+    this.getInfo(info);
+    return info[0] ?? null;
+  }
+
+  // ---- info box and scopes (upstream getInfo, getScopeValue ...) ---------------------------
+
+  /**
+   * Lines for the info box shown while the mouse is over the element (upstream `getInfo(arr)`;
+   * the first line names the element). Lines are left undefined past the last one.
+   */
+  /** Drawn in the selection color whatever the mouse does (upstream ORs a flag into `needsHighlight()`). */
+  drawsHighlighted(): boolean {
+    return false;
+  }
+
+  getInfo(_arr: string[]): void {}
+
+  /** The current and voltage lines most elements show; returns the next free line. */
+  getBasicInfo(arr: string[]): number {
+    arr[1] = 'I = ' + getCurrentDText(this.getCurrent());
+    arr[2] = 'Vd = ' + getVoltageDText(this.getVoltageDiff());
+    return 3;
+  }
+
+  getPower(): number {
+    return this.getVoltageDiff() * this.current;
+  }
+
+  getScopeValue(x: number): number {
+    return x === VAL_CURRENT
+      ? this.getCurrent()
+      : x === VAL_POWER
+        ? this.getPower()
+        : this.getVoltageDiff();
+  }
+
+  getScopeUnits(x: number): number {
+    return x === VAL_CURRENT ? UNITS_A : x === VAL_POWER ? UNITS_W : UNITS_V;
+  }
+
+  /** Label a scope shows for one of this element's plots. */
+  getScopeText(_v: number): string | null {
+    const info: string[] = [];
+    this.getInfo(info);
+    return info[0] ?? null;
+  }
+
+  canViewInScope(): boolean {
+    return this.getPostCount() <= 2;
+  }
+
+  /** Extra values (resistance) this element offers a scope. */
+  canShowValueInScope(_v: number): boolean {
+    return false;
+  }
+
+  getDialogTitle(): string {
+    const name = this.getElmType();
+    if (name === null) return 'Edit Component';
+    return 'Edit ' + name.substring(0, 1).toUpperCase() + name.substring(1);
+  }
+}
+
+export function distanceSq(x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  return dx * dx + dy * dy;
+}
+
+/** Upstream `lineDistanceSq`: squared distance from (gx, gy) to the line through a and b. */
+export function lineDistanceSq(
+  xa: number,
+  ya: number,
+  xb: number,
+  yb: number,
+  gx: number,
+  gy: number,
+): number {
+  const dtop = (yb - ya) * gx - (xb - xa) * gy + xb * ya - yb * xa;
+  const dbot = (yb - ya) * (yb - ya) + (xb - xa) * (xb - xa);
+  if (dbot === 0) return distanceSq(xa, ya, gx, gy);
+  return Math.trunc((dtop * dtop) / dbot);
+}
+
+/** How to build one element class, for the loaders. */
+export interface ElementType {
+  /** Upstream class name (`getClassName()`). */
+  className: string;
+  /**
+   * Upstream `getDumpClass()` when it differs: the class files name this one by, which loads it
+   * (NDarlingtonElm saves as DarlingtonElm). Menu variants registered after their base class
+   * (ACRailElm after RailElm) need not set it: the first class to register a dump type keeps it.
+   */
+  dumpClass?: string;
+  /**
+   * A new element at (x, y), as the user would place it. `sim` is the simulation it will join;
+   * elements with models look them up there (upstream's model maps are global).
+   */
+  create(x: number, y: number, sim: Simulation): CircuitElm;
+  /** An element read from a text-format line; `st` is past the five common fields. */
+  load(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    f: number,
+    st: StringTokenizer,
+    sim: Simulation,
+  ): CircuitElm;
+}
+
+type ElmConstructor = new (x: number, y: number, x2: number, y2: number, f: number) => CircuitElm;
+
+/** The usual ElementType for a class whose constructor only takes the position. */
+export function elementType(className: string, ctor: ElmConstructor): ElementType {
+  return {
+    className,
+    create(x, y, sim) {
+      const e = new ctor(x, y, x, y, 0);
+      e.sim = sim;
+      e.flags = e.getDefaultFlags();
+      e.initNew();
+      // upstream's constructors allocate nodes (and volts), so a new element can report state
+      e.allocNodes();
+      return e;
+    },
+    load(x1, y1, x2, y2, f, st, sim) {
+      const e = new ctor(x1, y1, x2, y2, f);
+      e.sim = sim;
+      e.undump(st);
+      e.allocNodes();
+      return e;
+    },
+  };
+}

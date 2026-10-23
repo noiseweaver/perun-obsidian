@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-embed/
+packages/obsidian/generated/
+coverage/
+.reference-site/
+test-results/
+playwright-report/
+*.log
+.DS_Store

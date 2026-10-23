@@ -1,0 +1,18 @@
+{
+  "name": "@perun/format",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Upstream circuit text and URL parse/serialize.",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@perun/elements": "workspace:*",
+    "lz-string": "^1.5.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

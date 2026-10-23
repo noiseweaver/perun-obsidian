@@ -1,0 +1,332 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2026 Perun contributors
+
+import { z } from 'zod';
+import { parseColor } from './color.ts';
+
+/** Theme schema version 1 (PLAN.md section 6). Every color is a CSS color string. */
+export interface Theme {
+  schemaVersion: 1;
+  meta: {
+    name: string;
+    author: string;
+    description: string;
+    /** Built-in the missing keys came from. */
+    base: string;
+  };
+  canvas: {
+    background: string;
+    grid: string;
+    gridMajor: string;
+  };
+  circuit: {
+    /** Voltage coloring: negative, zero and positive stops. */
+    voltage: { negative: string; zero: string; positive: string };
+    currentDot: string;
+    /** Element bodies and wires when voltage coloring is off. */
+    component: string;
+    /** Secondary element bodies (source and LED circles, transistor envelope). */
+    componentMuted: string;
+    selection: string;
+    hover: string;
+    post: string;
+    /** Values drawn next to elements. */
+    text: string;
+    /** Labels: labeled nodes, outputs, text elements, op-amp bodies. */
+    label: string;
+    /** Posts that touch an element without connecting to it. */
+    badConnection: string;
+    /** Field lines between capacitor plates (field overlay). */
+    electricField: string;
+    /** Field loops around inductors (field overlay). */
+    magneticField: string;
+    /** Stored energy glow and energy flow arrows (field overlay). */
+    energy: string;
+    /** Glow and temperature labels on hot parts (heat overlay). */
+    heat: string;
+    /** Colors a box (BoxElm) can pick for its border, title and shading. */
+    boxes: BoxColors;
+  };
+  scope: {
+    /** Plot area. */
+    background: string;
+    /** Card around each scope, with its header and legend (card look only). */
+    card: string;
+    /** Card of a scope undocked onto the circuit (card look only), drawn with a soft shadow. */
+    undockedCard: string;
+    /** Grid lines. */
+    grid: string;
+    /** Zero line, every tenth time line, muted plots. */
+    gridMajor: string;
+    /** Labels, readouts, cursor, power and other non-V/I plots. */
+    text: string;
+    /** Current plots. */
+    current: string;
+    /** Trigger level and state. */
+    trigger: string;
+    /** Spectrum (FFT) trace and labels. */
+    fft: string;
+    fftGrid: string;
+    /** The first entry draws voltage plots; later plots of one kind cycle through the rest. */
+    traces: string[];
+  };
+  teaching: {
+    /** Pencil colors; the first is the default pen. */
+    pens: string[];
+    /** The laser pointer's trail. */
+    laser: string;
+  };
+  ui: {
+    surface: string;
+    surfaceAlt: string;
+    border: string;
+    text: string;
+    textMuted: string;
+    accent: string;
+    danger: string;
+  };
+  style: {
+    /** Width of a thick line (upstream draws them 3 units wide). */
+    strokeWidth: number;
+    /** Half the side of a current dot (upstream: 2). */
+    dotRadius: number;
+    /** Grid drawn behind the circuit. */
+    grid: 'none' | 'dots' | 'lines';
+    /** UI text and canvas labels. */
+    font: string;
+    /** Component values on the canvas and numeric readouts. */
+    monoFont: string;
+    /**
+     * How scopes look: `classic` draws them as upstream does, `cards` puts each one in a card
+     * with a header, legend and labeled axes.
+     */
+    scopeLook: 'classic' | 'cards';
+    /**
+     * Corner rounding of the UI and scope cards: 0 square, 1 Material's own, 2 extra round.
+     * Below 1 round buttons become rounded squares.
+     */
+    roundness: number;
+    /**
+     * Strength of the shadows under panels, menus, tabs and undocked scope cards: 0 none, 1
+     * Material's own, 2 strong (darker than the theme's own shadow color, so they show on dark
+     * themes too).
+     */
+    shadows: number;
+  };
+}
+
+/** The colors a box can pick, by name, so a box keeps its meaning across themes. */
+export interface BoxColors {
+  red: string;
+  orange: string;
+  green: string;
+  blue: string;
+  purple: string;
+}
+
+/** A theme as authored: every key but schemaVersion is optional and falls back to `meta.base`. */
+export type ThemeInput = {
+  schemaVersion: 1;
+  meta?: Partial<Theme['meta']>;
+  canvas?: Partial<Theme['canvas']>;
+  circuit?: Partial<Omit<Theme['circuit'], 'voltage' | 'boxes'>> & {
+    voltage?: Partial<Theme['circuit']['voltage']>;
+    boxes?: Partial<BoxColors>;
+  };
+  scope?: Partial<Theme['scope']>;
+  teaching?: Partial<Theme['teaching']>;
+  ui?: Partial<Theme['ui']>;
+  style?: Partial<Theme['style']>;
+};
+
+export const MAX_THEME_BYTES = 16 * 1024;
+const MAX_TEXT = 200;
+
+const color = (description: string) =>
+  z
+    .string()
+    .max(64)
+    // no surrounding whitespace: a newline must not reach a CSS custom property
+    .refine((s) => s === s.trim() && parseColor(s) !== null, {
+      message: 'not a hex, RGB or HSL color',
+    })
+    .describe(description);
+const text = (description: string) => z.string().max(MAX_TEXT).describe(description);
+/** A font family list: names, quotes, spaces, commas and hyphens only (no url(), no CSS). */
+const fontFamily = (description: string) =>
+  z
+    .string()
+    .max(MAX_TEXT)
+    // spaces only: \s would let tabs and line breaks through into the CSS variables
+    .regex(/^[\w ,'"-]+$/, { message: 'font must be a family name list' })
+    .describe(description);
+
+/**
+ * zod schema for ThemeInput. Unknown keys are dropped. The descriptions feed the generated JSON
+ * Schema and the key reference in docs/THEMES.md.
+ */
+export const themeInputSchema = z
+  .object({
+    schemaVersion: z.literal(1).describe('Always 1.'),
+    meta: z
+      .object({
+        name: text('Name shown in the theme menu.'),
+        author: text('Who made the theme.'),
+        description: text('One line about the theme.'),
+        base: z
+          .string()
+          .max(40)
+          .describe(
+            'Id of the built-in theme the missing keys come from, such as dark (the default), ' +
+              'light or classic. Any id in the built-in themes table works.',
+          ),
+      })
+      .partial()
+      .optional()
+      .describe('About the theme.'),
+    canvas: z
+      .object({
+        background: color('Circuit area background.'),
+        grid: color('Grid dots or lines.'),
+        gridMajor: color('Every eighth grid line or dot.'),
+      })
+      .partial()
+      .optional()
+      .describe('The circuit area.'),
+    circuit: z
+      .object({
+        voltage: z
+          .object({
+            negative: color('Most negative voltage (at minus the voltage range).'),
+            zero: color('Zero volts.'),
+            positive: color('Most positive voltage.'),
+          })
+          .partial()
+          .describe('Voltage coloring: wires blend between these three stops.'),
+        currentDot: color('Moving current dots.'),
+        component: color('Element bodies and wires when voltage colors are off.'),
+        componentMuted: color(
+          'Secondary element parts: source and LED circles, transistor envelope.',
+        ),
+        selection: color('Selected elements and the selection box.'),
+        hover: color('The element under the pointer.'),
+        post: color('Element end posts and junction dots.'),
+        text: color('Values drawn next to elements.'),
+        label: color('Labels: labeled nodes, outputs, text boxes, op-amp symbols.'),
+        badConnection: color('Posts that touch an element without connecting to it.'),
+        electricField: color('Field lines between capacitor plates (Show fields).'),
+        magneticField: color('Field loops around inductors (Show fields).'),
+        energy: color('Stored energy glow and energy flow arrows (Show fields).'),
+        heat: color('Glow and temperature labels on hot parts (Heat visualization).'),
+        boxes: z
+          .object({
+            red: color('Red box.'),
+            orange: color('Orange box.'),
+            green: color('Green box.'),
+            blue: color('Blue box.'),
+            purple: color('Purple box.'),
+          })
+          .partial()
+          .describe(
+            'Colors a box can pick for its border, title and shading; a box without one uses ' +
+              'componentMuted.',
+          ),
+      })
+      .partial()
+      .optional()
+      .describe('Elements and wires.'),
+    scope: z
+      .object({
+        background: color('Plot area.'),
+        card: color('Card around each scope, with its header and legend (card look only).'),
+        undockedCard: color(
+          'Card of a scope undocked onto the circuit (card look only), drawn with a soft shadow.',
+        ),
+        grid: color('Grid lines.'),
+        gridMajor: color('Zero line, every tenth time line, muted plots.'),
+        text: color('Labels, readouts, cursor, power and other plots that are not V or I.'),
+        current: color('Current plots.'),
+        trigger: color('Trigger level and state.'),
+        fft: color('Spectrum (FFT) trace and labels.'),
+        fftGrid: color('Spectrum grid.'),
+        traces: z
+          .array(color('A trace color.'))
+          .min(1)
+          .max(16)
+          .describe(
+            'The first color draws voltage plots; further plots of one kind cycle through the rest.',
+          ),
+      })
+      .partial()
+      .optional()
+      .describe('Oscilloscopes.'),
+    teaching: z
+      .object({
+        pens: z
+          .array(color('A pencil color.'))
+          .min(1)
+          .max(8)
+          .describe('Pencil colors for drawing on the circuit; the first is the default.'),
+        laser: color("The laser pointer's fading trail."),
+      })
+      .partial()
+      .optional()
+      .describe('Teaching tools: the pencil and the laser pointer.'),
+    ui: z
+      .object({
+        surface: color('App background: bars, menus, dialogs (Material surface).'),
+        surfaceAlt: color('Raised containers: panels, cards, fields (Material surface container).'),
+        border: color('Dividers and outlines (Material outline variant).'),
+        text: color('Main text (Material on surface).'),
+        textMuted: color('Secondary text and icons (Material on surface variant).'),
+        accent: color('Primary buttons, checked items, focus (Material primary).'),
+        danger: color('Errors and warnings (Material error).'),
+      })
+      .partial()
+      .optional()
+      .describe('The app around the canvas.'),
+    style: z
+      .object({
+        strokeWidth: z
+          .number()
+          .min(0.5)
+          .max(8)
+          .describe('Width of thick lines in circuit units (CircuitJS draws them 3 wide).'),
+        dotRadius: z
+          .number()
+          .min(0.5)
+          .max(6)
+          .describe('Half the side of a current dot (CircuitJS: 2).'),
+        grid: z.enum(['none', 'dots', 'lines']).describe('Grid drawn behind the circuit.'),
+        font: fontFamily('UI text and canvas labels: a CSS font family list.'),
+        monoFont: fontFamily('Component values and numeric readouts: a CSS font family list.'),
+        scopeLook: z
+          .enum(['classic', 'cards'])
+          .describe(
+            'classic draws scopes as CircuitJS does; cards puts each in a card with a header, ' +
+              'legend and labeled axes.',
+          ),
+        roundness: z
+          .number()
+          .min(0)
+          .max(2)
+          .describe(
+            'Corner rounding of the UI and scope cards: 0 square, 1 Material 3 (default), 2 extra ' +
+              'round. Large radii change faster than small ones; below 1 round buttons become ' +
+              'rounded squares.',
+          ),
+        shadows: z
+          .number()
+          .min(0)
+          .max(2)
+          .describe(
+            'Strength of the shadows under panels, menus, tabs and undocked scope cards: 0 none, ' +
+              '1 Material 3 (default), 2 strong. Above 1 they also darken toward black, so they ' +
+              'show on dark themes.',
+          ),
+      })
+      .partial()
+      .optional()
+      .describe('Line widths, grid and fonts.'),
+  })
+  .describe('A Perun theme. Every key but schemaVersion is optional.');

@@ -1,0 +1,529 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2026 Perun contributors
+//
+// Phase 4 acceptance: upstream links using tier-1 elements load and animate, and switching Classic
+// and Dark at runtime restyles everything without a reload.
+
+import { expect, test, type Page } from '@playwright/test';
+import { compressCircuit } from '@perun/format';
+
+const RC =
+  '$ 1 0.000005 10.20027730826997 50 5 50 5e-11\n' +
+  'v 96 224 96 96 0 1 40 5 0 0 0.5\n' +
+  'r 96 96 256 96 0 1000\n' +
+  'c 256 96 256 224 0 0.000001 0\n' +
+  'w 96 224 256 224 0\n';
+
+const SWITCHED =
+  '$ 1 0.000005 10.20027730826997 50 5 50 5e-11\n' +
+  'v 96 224 96 96 0 0 40 5 0 0 0.5\n' +
+  's 96 96 256 96 0 1 false\n' +
+  'r 256 96 256 224 0 1000\n' +
+  'w 96 224 256 224 0\n';
+
+/** tools/golden/circuits/convergence-fail.txt: stops with "Convergence failed!" at 5 ms. */
+const FAILS =
+  '$ 1 5.0E-6 10 50 5.0 50 5.0E-11\n' +
+  'R 400 96 400 64 0 2 50.0 50000.0 50000.0 4.71238898038469 0.5\n' +
+  'r 400 96 400 288 0 1000.0\n' +
+  'f 288 304 400 304 0 1.5 2.0\n' +
+  'g 400 320 400 352 0\n' +
+  'g 288 304 288 352 0\n';
+
+/** `cct=` the way upstream's export link writes it. */
+const cct = (text: string): string => encodeURIComponent(text).replaceAll('%24', '$');
+
+/** The time readout, with the spaces that pad it to a fixed width squeezed out. */
+const simTime = async (page: Page): Promise<string> =>
+  ((await page.getByTestId('sim-time').textContent()) ?? '').replace(/\s+/g, ' ');
+
+/** RGBA of one canvas pixel (CSS px). */
+const pixel = (page: Page, x: number, y: number) =>
+  page.getByTestId('circuit-canvas').evaluate(
+    (c: HTMLCanvasElement, [x, y]) => {
+      const dpr = c.width / c.clientWidth;
+      const d = c.getContext('2d')?.getImageData(x * dpr, y * dpr, 1, 1).data;
+      return d ? [d[0], d[1], d[2]] : null;
+    },
+    [x, y] as const,
+  );
+
+/** A digest of the whole canvas, to tell frames apart. */
+const canvasHash = (page: Page) =>
+  page.getByTestId('circuit-canvas').evaluate((c: HTMLCanvasElement) => {
+    const d = c.getContext('2d')?.getImageData(0, 0, c.width, c.height).data ?? [];
+    let h = 0;
+    for (let i = 0; i < d.length; i += 7) h = (h * 31 + (d[i] ?? 0)) | 0;
+    return h;
+  });
+
+test('the default example loads and animates', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByTestId('circuit-title')).toHaveText('LRC Circuit');
+  await expect(page.getByTestId('circuits-menu')).toBeEnabled();
+  const t0 = await simTime(page);
+  const h0 = await canvasHash(page);
+  await expect.poll(() => simTime(page)).not.toBe(t0);
+  await expect.poll(() => canvasHash(page)).not.toBe(h0);
+});
+
+test('cct and ctz links load', async ({ page }) => {
+  await page.goto(`/?cct=${cct(RC)}`);
+  await expect(page.getByTestId('load-error')).toHaveCount(0);
+  const kinds = () =>
+    page.evaluate(() =>
+      (
+        window as unknown as {
+          perun: { controller: { circuit: { elements: object[] } } };
+        }
+      ).perun.controller.circuit.elements.map((e) => e.constructor.name),
+    );
+  await expect.poll(kinds).toEqual(['VoltageElm', 'ResistorElm', 'CapacitorElm', 'WireElm']);
+  await expect.poll(() => simTime(page)).not.toBe('t = 0.000 s');
+
+  await page.goto(`/?ctz=${compressCircuit(SWITCHED)}&running=false`);
+  await expect.poll(kinds).toEqual(['VoltageElm', 'SwitchElm', 'ResistorElm', 'WireElm']);
+  await expect(page.getByTestId('run-stop')).toHaveText(/Run/);
+});
+
+test('startCircuit opens an example', async ({ page }) => {
+  await page.goto('/?startCircuit=ohms.txt');
+  await expect(page.getByTestId('circuit-title')).toHaveText(/Ohm/);
+});
+
+test('Classic and Dark restyle the canvas and UI without a reload', async ({ page }) => {
+  await page.goto(`/?cct=${cct(RC)}`);
+  await expect(page.getByTestId('circuit-title')).toBeVisible();
+  const marker = await page.evaluate(() => {
+    (window as unknown as { marker: number }).marker = 42;
+    return 42;
+  });
+  const surface = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--ui-surface'),
+    );
+  const pick = async (id: string) => {
+    await page.getByTestId('options-menu').click();
+    await page.getByTestId('menu-theme').click();
+    // a click moves the mouse across the parent menu, which can close the submenu on a slow runner
+    const item = page.getByTestId(`theme-${id}`);
+    await expect(item).toBeVisible();
+    await item.dispatchEvent('click');
+  };
+
+  await pick('classic');
+  await expect.poll(() => pixel(page, 2, 2)).toEqual([0, 0, 0]);
+  const classicSurface = await surface();
+
+  await pick('dark');
+  await expect.poll(() => pixel(page, 2, 2)).not.toEqual([0, 0, 0]);
+  expect(await surface()).not.toBe(classicSurface);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+  await pick('classic');
+  await expect.poll(() => pixel(page, 2, 2)).toEqual([0, 0, 0]);
+  expect(await page.evaluate(() => (window as unknown as { marker: number }).marker)).toBe(marker);
+});
+
+test('Dark is the default theme, including for settings saved before it was', async ({ page }) => {
+  await page.goto(`/?cct=${cct(RC)}`);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+  // version 1 settings always held a theme, Classic by default; only the other settings carry over
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem(
+      'circuitjs-next.settings',
+      JSON.stringify({ themeId: 'classic', showOhm: true }),
+    );
+  });
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.getByTestId('options-menu').click();
+  await expect(page.getByRole('menuitemcheckbox', { name: /Show Ω/ })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+});
+
+test('run/stop pauses and reset restarts time', async ({ page }) => {
+  await page.goto(`/?cct=${cct(RC)}`);
+  await expect.poll(() => simTime(page)).not.toBe('t = 0.000 s');
+  await page.getByTestId('run-stop').click();
+  await page.waitForTimeout(300); // the status bar updates every 100 ms
+  const paused = await simTime(page);
+  await page.waitForTimeout(300);
+  expect(await simTime(page)).toBe(paused);
+  await page.getByTestId('reset').click();
+  await expect.poll(() => simTime(page)).toBe('t = 0.000 s');
+});
+
+test('clicking a switch toggles it', async ({ page }) => {
+  await page.goto(`/?cct=${cct(SWITCHED)}&running=false`);
+  type Ctl = {
+    circuit: { elements: { position?: number }[] };
+    elementCenter(e: object): { x: number; y: number } | null;
+  };
+  const state = () =>
+    page.evaluate(() => {
+      const c = (window as unknown as { perun: { controller: Ctl } }).perun.controller;
+      const sw = c.circuit.elements[1];
+      return sw ? { position: sw.position, at: c.elementCenter(sw) } : null;
+    });
+  await expect.poll(async () => (await state())?.position).toBe(1);
+  const at = (await state())?.at;
+  expect(at).toBeTruthy();
+  if (!at) return;
+  await page.getByTestId('circuit-canvas').click({ position: at });
+  await expect.poll(async () => (await state())?.position).toBe(0);
+});
+
+test('open link dialog loads a circuit', async ({ page }) => {
+  await page.goto(`/?cct=${cct(RC)}`);
+  await page.getByRole('button', { name: 'File' }).click();
+  await page.getByRole('menuitem', { name: 'Open link…' }).click();
+  await page
+    .getByTestId('link-input')
+    .fill(`http://localhost:5173/?ctz=${compressCircuit(SWITCHED)}`);
+  await page.getByTestId('link-open').click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              perun: { controller: { circuit: { elements: object[] } } };
+            }
+          ).perun.controller.circuit.elements.length,
+      ),
+    )
+    .toBe(4);
+});
+
+test('a convergence failure stops the simulation with a message', async ({ page }) => {
+  await page.goto(`/?cct=${cct(FAILS)}`);
+  await expect(page.getByTestId('stop-message')).toHaveText(/Convergence failed/, {
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId('run-stop')).toHaveText(/Run/);
+});
+
+/** A diode straight across a 5 V source: upstream stops with "max current exceeded". */
+const SHORTED_DIODE =
+  '$ 1 0.000005 10.20027730826997 50 5 50 5e-11\n' +
+  'v 96 224 96 96 0 0 40 5 0 0 0.5\n' +
+  'w 96 96 224 96 0\n' +
+  'w 96 224 224 224 0\n' +
+  'd 224 96 224 224 2 default\n';
+
+test('a stop from an element leaves the canvas drawing', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(`/?cct=${cct(SHORTED_DIODE)}`);
+  await expect(page.getByTestId('stop-message')).toHaveText(/max current exceeded/, {
+    timeout: 15_000,
+  });
+  // the frame loop survived the stop: a theme change still repaints the canvas
+  const before = await canvasHash(page);
+  await page.getByTestId('options-menu').click();
+  await page.getByTestId('menu-theme').click();
+  await page.getByTestId('theme-classic').click();
+  await expect.poll(() => canvasHash(page)).not.toBe(before);
+  expect(errors).toEqual([]);
+});
+
+/** Three ends meeting at (256, 96) and at (256, 224). */
+const TEE =
+  '$ 1 0.000005 10.20027730826997 50 5 50 5e-11\n' +
+  'v 96 224 96 96 0 0 40 5 0 0 0.5\n' +
+  'w 96 96 256 96 0\n' +
+  'r 256 96 416 96 0 1000\n' +
+  'r 256 96 256 224 0 1000\n' +
+  'w 416 96 416 224 0\n' +
+  'w 96 224 256 224 0\n' +
+  'w 256 224 416 224 0\n';
+
+test('Junction dots marks every point where ends meet', async ({ page }) => {
+  await page.goto(`/?cct=${cct(TEE)}`);
+  await expect(page.getByTestId('circuit-title')).toBeVisible();
+  await page.getByTestId('run-stop').click();
+  await expect(page.getByTestId('run-stop')).toHaveText(/Run/);
+  const off = await canvasHash(page);
+  await page.getByTestId('options-menu').click();
+  await page.getByTestId('menu-junction-dots').click();
+  await expect.poll(() => canvasHash(page)).not.toBe(off);
+  await page.getByTestId('options-menu').click();
+  await page.getByTestId('menu-junction-dots').click();
+  await expect.poll(() => canvasHash(page)).toBe(off);
+});
+
+test('Show current when paused keeps the dots on screen, standing still', async ({ page }) => {
+  await page.goto(`/?cct=${cct(TEE)}`);
+  await expect(page.getByTestId('circuit-title')).toBeVisible();
+  await expect.poll(() => simTime(page)).not.toBe('t = 0.000 s');
+  await page.getByTestId('run-stop').click();
+  await expect(page.getByTestId('run-stop')).toHaveText(/Run/);
+  // paused dots stand still: the picture holds
+  const shown = await canvasHash(page);
+  await expect.poll(() => canvasHash(page)).toBe(shown);
+  await page.getByTestId('options-menu').click();
+  await page.getByTestId('menu-paused-dots').click();
+  await expect.poll(() => canvasHash(page)).not.toBe(shown);
+  await page.getByTestId('options-menu').click();
+  await page.getByTestId('menu-paused-dots').click();
+  await expect.poll(() => canvasHash(page)).toBe(shown);
+});
+
+test('the community dark themes apply', async ({ page }) => {
+  await page.goto(`/?cct=${cct(RC)}`);
+  for (const id of ['nord', 'solarized-dark', 'gruvbox-dark', 'adwaita-dark']) {
+    await page.getByTestId('options-menu').click();
+    await page.getByTestId('menu-theme').click();
+    await page.getByTestId(`theme-${id}`).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', id);
+    // reopen only once the menu has closed, or the click lands on the closing menu
+    await expect(page.getByRole('menu')).toHaveCount(0);
+  }
+});
+
+test('the time readout does not move as digits change', async ({ page }) => {
+  await page.goto(`/?cct=${cct(RC)}`);
+  const readout = page.getByTestId('sim-time');
+  // the width is in ch of the monospace web font: measure once it has loaded
+  await readout.evaluate(async (el) => {
+    await document.fonts.load(`12px ${getComputedStyle(el).fontFamily}`);
+    await document.fonts.ready;
+  });
+  await expect.poll(() => simTime(page)).not.toBe('t = 0.000 s');
+  const seen = new Map<string, string>();
+  for (let i = 0; i < 8; i++) {
+    const b = await readout.boundingBox();
+    if (b) seen.set(`${b.x.toFixed(1)},${b.width.toFixed(1)}`, await simTime(page));
+    await page.waitForTimeout(250);
+  }
+  // on failure, shows each position with a readout text seen there
+  expect(Object.fromEntries(seen)).toEqual(Object.fromEntries([...seen].slice(0, 1)));
+});
+
+test('the time step can be changed and undone', async ({ page }) => {
+  await page.goto(`/?cct=${cct(RC)}`);
+  await expect(page.getByTestId('time-step')).toHaveText(/5 μs/);
+  await page.getByTestId('time-step').click();
+  await page.getByTestId('sim-time-step').fill('1u');
+  await page.getByTestId('sim-settings-ok').click();
+  await expect(page.getByTestId('time-step')).toHaveText(/1 μs/);
+  await page.getByTestId('undo').click();
+  await expect(page.getByTestId('time-step')).toHaveText(/5 μs/);
+  await expect(page.getByTestId('sim-time')).toHaveText(/^t = +\d+\.\d{3} +[mμ]?s$/);
+});
+
+test('the text box font setting redraws text and is remembered', async ({ page }) => {
+  await page.goto(`/?cct=${cct('$ 1 0.000005 10 50 5 50 5e-11\nx 96 96 112 96 4 24 hello\n')}`);
+  await expect(page.getByTestId('circuit-title')).toBeVisible();
+  const before = await canvasHash(page);
+  await page.getByTestId('options-menu').click();
+  await page.getByTestId('menu-text-font').click();
+  await page.getByTestId('text-font-serif').click();
+  await expect.poll(() => canvasHash(page)).not.toBe(before);
+  await page.reload();
+  await page.getByTestId('options-menu').click();
+  await page.getByTestId('menu-text-font').click();
+  await expect(page.getByTestId('text-font-serif')).toHaveAttribute('aria-checked', 'true');
+});
+
+test('Circuits submenus open to the right of the menu', async ({ page }) => {
+  await page.goto(`/?cct=${cct(RC)}`);
+  await page.getByTestId('circuits-menu').click();
+  const top = page.getByRole('menu').first();
+  await top.getByRole('menuitem', { name: /Basics/ }).click();
+  const sub = page.getByRole('menu').nth(1);
+  await expect(sub).toBeVisible();
+  const a = await top.boundingBox();
+  const b = await sub.boundingBox();
+  expect(b?.x ?? 0).toBeGreaterThanOrEqual((a?.x ?? 0) + (a?.width ?? 0) - 1);
+});
+
+test('Circuits > Search circuits finds an example by name; Enter opens it', async ({ page }) => {
+  await page.goto(`/?cct=${cct(RC)}`);
+  await expect(page.getByTestId('circuits-menu')).toBeEnabled();
+  await page.getByTestId('circuits-menu').click();
+  await page.getByTestId('circuits-search-open').click();
+  const sheet = page.getByTestId('circuits-sheet');
+  await expect(sheet).toBeVisible();
+  // ready for typing
+  await expect(page.getByTestId('circuits-search')).toBeFocused();
+  await page.keyboard.type('lrc');
+  await expect(sheet.getByRole('button', { name: /LRC Circuit/ }).first()).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(sheet).toBeHidden();
+  await expect
+    .poll(() => page.evaluate(() => window.perun?.controller.circuit.scopes.scopeCount))
+    .toBe(3);
+});
+
+test.describe('Circuits on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test('open as a full-screen sheet with groups and search', async ({ page }) => {
+    await page.goto(`/?cct=${cct(RC)}`);
+    await expect(page.getByTestId('circuits-menu')).toBeEnabled();
+    await page.getByTestId('circuits-menu').tap();
+    const sheet = page.getByTestId('circuits-sheet');
+    await expect(sheet).toBeVisible();
+    const box = await sheet.boundingBox();
+    expect(box?.width).toBe(390);
+    // a group opens in place
+    await sheet.getByRole('button', { name: 'Basics' }).tap();
+    await expect(sheet.getByRole('button', { name: 'Basics' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    // search finds circuits in any group, and one opens
+    await page.getByTestId('circuits-search').fill('lrc');
+    await sheet
+      .getByRole('button', { name: /LRC Circuit/ })
+      .first()
+      .tap();
+    await expect(sheet).toBeHidden();
+    await expect
+      .poll(() => page.evaluate(() => window.perun?.controller.circuit.scopes.scopeCount))
+      .toBe(3);
+  });
+
+  test('the circuits sheet goes away with a tap outside it or a pull down', async ({ page }) => {
+    await page.goto(`/?cct=${cct(RC)}`);
+    await expect(page.getByTestId('circuits-menu')).toBeEnabled();
+    const sheet = page.getByTestId('circuits-sheet');
+    // a tap on the dimmed app above the sheet
+    await page.getByTestId('circuits-menu').tap();
+    await expect(sheet).toBeVisible();
+    await page.touchscreen.tap(200, 20);
+    await expect(sheet).toBeHidden();
+    // a pull down from the handle
+    await page.getByTestId('circuits-menu').tap();
+    await expect(sheet).toBeVisible();
+    await page.waitForTimeout(300);
+    await sheet.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const touch = (y: number): Touch =>
+        new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
+      const fire = (type: string, y: number, list: Touch[]): void => {
+        el.dispatchEvent(
+          new TouchEvent(type, {
+            touches: list,
+            changedTouches: [touch(y)],
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      };
+      const y0 = r.top + 12;
+      fire('touchstart', y0, [touch(y0)]);
+      for (let d = 20; d <= 200; d += 20) fire('touchmove', y0 + d, [touch(y0 + d)]);
+      fire('touchend', y0 + 200, []);
+    });
+    await expect(sheet).toBeHidden();
+  });
+
+  test('pinching or double-tapping the interface does not zoom the page', async ({ page }) => {
+    await page.goto(`/?cct=${cct(RC)}`);
+    await expect(page.getByTestId('circuits-menu')).toBeEnabled();
+    const blocked = await page.locator('.app-bar').evaluate((el) => {
+      const touch = (x: number): Touch =>
+        new Touch({ identifier: x, target: el, clientX: x, clientY: 20 });
+      const e = new TouchEvent('touchmove', {
+        touches: [touch(50), touch(150)],
+        bubbles: true,
+        cancelable: true,
+      });
+      el.dispatchEvent(e);
+      return e.defaultPrevented;
+    });
+    expect(blocked).toBe(true);
+    expect(await page.evaluate(() => getComputedStyle(document.body).touchAction)).toBe(
+      'manipulation',
+    );
+    // focusing a text field on iPhone zooms in below 16px
+    await page.getByTestId('circuits-menu').tap();
+    expect(
+      await page.getByTestId('circuits-search').evaluate((el) => getComputedStyle(el).fontSize),
+    ).toBe('16px');
+  });
+
+  test('every menu fits on screen, and dialogs open above the property sheet', async ({ page }) => {
+    await page.goto(`/?cct=${cct(RC)}`);
+    await expect(page.getByTestId('circuits-menu')).toBeEnabled();
+    for (const id of ['file-menu', 'edit-menu', 'circuits-menu', 'scopes-menu', 'options-menu']) {
+      const trigger = page.getByTestId(id);
+      const box = await trigger.boundingBox();
+      expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+      expect((box?.x ?? 0) + (box?.width ?? 999)).toBeLessThanOrEqual(390);
+      // the label is not squeezed and clipped
+      expect(await trigger.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    }
+    // nothing above the app bar outside an installed app
+    const bar = await page.locator('.app-bar').boundingBox();
+    expect(bar?.y).toBe(0);
+    // the property sheet is up while a dialog opens: the dialog is on top
+    await page.evaluate(() => {
+      const c = window.perun?.controller;
+      const e = c?.circuit.elements[1];
+      if (c && e) c.editor.select(e);
+    });
+    const sheet = await page.locator('.inspector').boundingBox();
+    if (sheet === null) throw new Error('no property sheet');
+    await page.getByTestId('file-menu').tap();
+    await page.getByTestId('menu-about').tap();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    // let the sheet and the dialog finish sliding in
+    await page.waitForTimeout(500);
+    const top = await page.evaluate(
+      ([x, y]) => {
+        // the open dialog makes the rest of the page ignore the pointer, which hit testing skips
+        document
+          .querySelector<HTMLElement>('.inspector')
+          ?.style.setProperty('pointer-events', 'auto');
+        return document.elementFromPoint(x, y)?.closest('[role=dialog], .inspector')?.className;
+      },
+      [sheet.x + sheet.width / 2, sheet.y + 20] as const,
+    );
+    expect(top).toContain('dialog-content');
+  });
+});
+
+test.describe('A phone on its side', () => {
+  test.use({ viewport: { width: 874, height: 402 }, hasTouch: true, isMobile: true });
+
+  test('the run controls move to a rail so the canvas keeps its height', async ({ page }) => {
+    await page.goto(`/?cct=${cct(RC)}`);
+    await expect(page.getByTestId('circuits-menu')).toBeEnabled();
+    const canvas = await page.getByTestId('circuit-canvas').boundingBox();
+    const run = await page.getByTestId('run-stop').boundingBox();
+    if (canvas === null || run === null) throw new Error('no layout');
+    // the run button sits beside the canvas, not under it
+    expect(run.x).toBeGreaterThanOrEqual(canvas.x + canvas.width);
+    expect(canvas.height).toBeGreaterThan(300);
+    // the menus are icons with their names for screen readers, and the time readout still shows
+    await expect(page.getByRole('button', { name: 'Options' })).toBeVisible();
+    await expect(page.getByTestId('sim-time')).toBeVisible();
+    await page.getByTestId('circuits-menu').tap();
+    await expect(page.getByTestId('circuits-sheet')).toBeVisible();
+  });
+});
+
+test('the skipped-items notice explains what was left out and can be hidden', async ({ page }) => {
+  await page.goto(`/?ctz=${compressCircuit(RC + '9999 0 0 16 0 0\nr 0 0 64 0 0 abc\n')}`);
+  const notice = page.getByTestId('load-warnings');
+  await expect(notice).toContainText('2 unsupported items skipped');
+  await notice.getByText('2 unsupported items skipped').click();
+  const details = page.getByTestId('load-issues');
+  await expect(details).toContainText('Unknown part type “9999”');
+  await expect(details).toContainText('9999 0 0 16 0 0');
+  await expect(details).toContainText('Line 7 · Expected a number, found “abc”.');
+  await page.getByRole('button', { name: 'OK' }).click();
+  await expect(notice).toBeVisible();
+  await page.getByTestId('load-warnings-dismiss').click();
+  await expect(notice).toHaveCount(0);
+});

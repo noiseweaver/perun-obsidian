@@ -1,0 +1,19 @@
+{
+  "name": "@perun/render",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Canvas 2D implementation of Painter, scene drawing, hit testing.",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@perun/elements": "workspace:*",
+    "@perun/theme": "workspace:*",
+    "mathjax-full": "3.2.2"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

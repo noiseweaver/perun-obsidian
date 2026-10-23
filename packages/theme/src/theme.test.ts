@@ -1,0 +1,134 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2026 Perun contributors
+
+import { describe, expect, it } from 'vitest';
+import {
+  BUILTIN_THEMES,
+  fullRadius,
+  shapeCssVariables,
+  shapeRadius,
+  mixColor,
+  parseColor,
+  parseTheme,
+  parseThemeJson,
+  resolveTheme,
+  shadowCssVariables,
+  themeCssVariables,
+  toCss,
+} from './index.ts';
+
+describe('parseColor', () => {
+  it('reads hex, rgb and hsl', () => {
+    expect(parseColor('#0f0')).toEqual({ r: 0, g: 255, b: 0, a: 1 });
+    expect(parseColor('#00ff0080')?.a).toBeCloseTo(128 / 255);
+    expect(parseColor('rgb(255, 0, 10)')).toEqual({ r: 255, g: 0, b: 10, a: 1 });
+    expect(parseColor('rgba(255 0 10 / 50%)')?.a).toBeCloseTo(0.5);
+    const h = parseColor('hsl(120, 100%, 50%)');
+    expect(h && [Math.round(h.r), Math.round(h.g), Math.round(h.b)]).toEqual([0, 255, 0]);
+  });
+
+  it('rejects anything else', () => {
+    for (const s of ['', 'red', '#12', '#gggggg', 'url(x)', 'rgb(1,2)', 'hsl(1%, 2, 3)', 'x#fff'])
+      expect(parseColor(s)).toBeNull();
+  });
+
+  it('mixes like upstream Color(c1, c2, mix)', () => {
+    const gray = { r: 128, g: 128, b: 128, a: 1 };
+    const green = { r: 0, g: 255, b: 0, a: 1 };
+    expect(mixColor(gray, green, 0.5)).toEqual({ r: 64, g: 191, b: 64, a: 1 });
+    expect(toCss({ r: 64, g: 191, b: 64, a: 1 })).toBe('#40bf40');
+  });
+});
+
+describe('themes', () => {
+  it('built-ins are complete and valid', () => {
+    for (const t of Object.values(BUILTIN_THEMES)) {
+      const r = parseTheme(t);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.theme).toEqual(t);
+    }
+  });
+
+  it('fills missing keys from the base', () => {
+    const t = resolveTheme({ schemaVersion: 1, meta: { base: 'dark' }, canvas: { grid: '#123' } });
+    expect(t.canvas.grid).toBe('#123');
+    expect(t.canvas.background).toBe(BUILTIN_THEMES['dark']?.canvas.background);
+    expect(t.circuit.voltage.zero).toBe(BUILTIN_THEMES['dark']?.circuit.voltage.zero);
+  });
+
+  it('rejects bad colors, fonts and oversized input, and drops unknown keys', () => {
+    expect(parseTheme({ schemaVersion: 1, canvas: { background: 'url(evil)' } }).ok).toBe(false);
+    expect(parseTheme({ schemaVersion: 1, style: { font: 'x; background: url(a)' } }).ok).toBe(
+      false,
+    );
+    expect(parseTheme({ schemaVersion: 2 }).ok).toBe(false);
+    expect(parseThemeJson('{').ok).toBe(false);
+    expect(parseThemeJson(' '.repeat(20000)).ok).toBe(false);
+    const r = parseTheme({ schemaVersion: 1, extra: 1, ui: { nope: '#fff' } });
+    expect(r.ok && 'extra' in r.theme).toBe(false);
+  });
+
+  it('exposes UI tokens as CSS variables', () => {
+    const vars = themeCssVariables(BUILTIN_THEMES['classic'] as never);
+    expect(vars['--ui-surface-alt']).toBe(BUILTIN_THEMES['classic']?.ui.surfaceAlt);
+    expect(vars['--canvas-background']).toBe(BUILTIN_THEMES['classic']?.canvas.background);
+  });
+
+  it('has a Classic Dots built-in: Classic colors on a dot grid', () => {
+    const t = BUILTIN_THEMES['classic-dots'];
+    expect(t?.style.grid).toBe('dots');
+    expect(t?.circuit).toEqual(BUILTIN_THEMES['classic']?.circuit);
+  });
+});
+
+describe('shadows', () => {
+  it('is half opaque at 1, clear at 0, and darker toward black above 1', () => {
+    expect(shadowCssVariables(1)).toEqual({
+      '--md-shadow-strength': '50%',
+      '--md-shadow-tint': '100%',
+    });
+    expect(shadowCssVariables(0)['--md-shadow-strength']).toBe('0%');
+    expect(shadowCssVariables(2)).toEqual({
+      '--md-shadow-strength': '85%',
+      '--md-shadow-tint': '40%',
+    });
+  });
+
+  it('is part of every theme, and off on E-ink', () => {
+    for (const t of Object.values(BUILTIN_THEMES)) {
+      const v = themeCssVariables(t);
+      expect(v['--md-shadow-strength']).toMatch(/^\d+%$/);
+    }
+    expect(BUILTIN_THEMES['eink']?.style.shadows).toBe(0);
+    expect(BUILTIN_THEMES['dark']?.style.shadows).toBe(1);
+  });
+});
+
+describe('roundness', () => {
+  it('keeps Material radii at 1 and squares everything at 0', () => {
+    expect(shapeCssVariables(1)).toEqual({
+      '--md-shape-xs': '4px',
+      '--md-shape-s': '8px',
+      '--md-shape-m': '12px',
+      '--md-shape-l': '16px',
+      '--md-shape-xl': '28px',
+      '--md-shape-full': '999px',
+    });
+    for (const v of Object.values(shapeCssVariables(0))) expect(v).toBe('0px');
+  });
+
+  it('shrinks large radii faster than small ones, and grows small ones faster', () => {
+    const ratio = (base: number, r: number) => shapeRadius(base, r) / base;
+    expect(ratio(28, 0.5)).toBeLessThan(ratio(4, 0.5));
+    expect(ratio(4, 2)).toBeGreaterThan(ratio(28, 2));
+    // the order of the sizes never changes
+    for (const r of [0.2, 0.5, 0.8, 1.5, 2])
+      expect(shapeRadius(4, r)).toBeLessThanOrEqual(shapeRadius(28, r));
+  });
+
+  it('turns round buttons into rounded squares below 1', () => {
+    expect(fullRadius(1)).toBe('999px');
+    expect(parseFloat(fullRadius(0.6))).toBeLessThan(20);
+    expect(parseFloat(fullRadius(0.6))).toBeGreaterThan(0);
+  });
+});

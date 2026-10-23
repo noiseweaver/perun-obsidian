@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    // packages/obsidian/build.ts runs in Node, which needs the .ts in its imports
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "*.config.ts",
+    "eslint.config.js",
+    "tools/eslint-rules",
+    "packages/app/vite.config.ts",
+    "packages/app/vite-plugin-examples.ts",
+    "packages/app/vite-plugin-licenses.ts",
+    "packages/app/vite-plugin-sw.ts",
+    "packages/obsidian/build.ts"
+  ]
+}

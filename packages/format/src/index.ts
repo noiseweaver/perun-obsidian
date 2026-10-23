@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2026 Perun contributors
+
+export { AttrReader, AttrWriter } from './attrs.ts';
+export { JavaRandom } from '@perun/elements';
+export {
+  Circuit,
+  OptionFlag,
+  getCircuitAsComposite,
+  isSupportedElementTag,
+  readCircuit,
+  type CircuitOptions,
+  type CompositeResult,
+  type Hint,
+  type LoadIssue,
+  type LoadIssueKind,
+} from './circuit.ts';
+export {
+  runCircuit,
+  type RunElementInfo,
+  type RunElementSample,
+  type RunResult,
+  type RunSample,
+  type RunSettings,
+} from './runner.ts';
+export {
+  XmlElement,
+  XmlParseError,
+  escapeXml,
+  parseXml,
+  prettyPrint,
+  type XmlText,
+} from './xml.ts';
+export {
+  compressCircuit,
+  decompressCircuit,
+  parseQuery,
+  queryBoolean,
+  startCircuitFromQuery,
+  type StartCircuit,
+} from './url.ts';

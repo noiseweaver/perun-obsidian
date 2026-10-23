@@ -1,0 +1,292 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (C) 2026 Perun contributors
+
+import {
+  CURRENT_TOO_FAST,
+  type Ink,
+  type MathBox,
+  type Painter,
+  type Pt,
+  type StrokeStyle,
+  type TextStyle,
+} from '@perun/elements';
+import { parseColor, toCss, type Rgba } from '@perun/theme';
+import { layoutMath, type MathOp } from './math.ts';
+import type { Palette } from './palette.ts';
+
+const paths = new WeakMap<MathOp, Path2D>();
+
+/** Draw a formula's operations; the context is in em/1000 units with the baseline at y = 0. */
+export function drawMathOps(c: CanvasRenderingContext2D, ops: readonly MathOp[]): void {
+  for (const op of ops) {
+    c.save();
+    c.transform(...op.m);
+    if (op.kind === 'path') {
+      let p = paths.get(op);
+      if (p === undefined) {
+        p = new Path2D(op.d);
+        paths.set(op, p);
+      }
+      c.fill(p);
+    } else if (op.kind === 'rect') c.fillRect(op.x, op.y, op.w, op.h);
+    else if (op.kind === 'line') {
+      c.lineWidth = op.width;
+      c.setLineDash([]);
+      c.beginPath();
+      c.moveTo(op.x1, op.y1);
+      c.lineTo(op.x2, op.y2);
+      c.stroke();
+    } else {
+      c.font = `${op.italic ? 'italic ' : ''}${op.bold ? 'bold ' : ''}${op.size}px serif`;
+      c.textAlign = 'left';
+      c.textBaseline = 'alphabetic';
+      c.fillText(op.s, 0, 0);
+    }
+    c.restore();
+  }
+}
+
+/** Drawing settings for one frame. */
+export interface PaintSettings {
+  /** Color wires and leads by voltage (circuit option); otherwise they use the component color. */
+  voltageColors: boolean;
+  /** Full-scale voltage of the color scale. */
+  voltageRange: number;
+  /** Draw current dots (circuit option, and the simulation running or the paused-dots setting). */
+  dots: boolean;
+  /** The simulation is running; paused dots stand still, so too-fast ones get a fixed phase. */
+  running?: boolean;
+  /** Size of component value text, as a fraction of the 12 px default (user setting). */
+  valueScale?: number;
+}
+
+const UPSTREAM_THICK = 3;
+
+/**
+ * Upstream FuseElm/MotorProtectionSwitchElm `getTempColor`: `c` blends to red over the first
+ * third of `temp`, then red goes to yellow and yellow to white. Null means past the limit.
+ */
+export function heatColor(c: Rgba, temp: number): Rgba | null {
+  if (temp < 0.3333) {
+    const x = Math.max(0, Math.trunc(255 * temp * 3));
+    const k = (255 - x) / 255;
+    return { r: Math.trunc(x + c.r * k), g: Math.trunc(c.g * k), b: Math.trunc(c.b * k), a: 1 };
+  }
+  if (temp < 0.6667)
+    return { r: 255, g: Math.max(0, Math.trunc((temp - 0.3333) * 3 * 255)), b: 0, a: 1 };
+  if (temp < 1)
+    return { r: 255, g: 255, b: Math.max(0, Math.trunc((temp - 0.6666) * 3 * 255)), a: 1 };
+  return null;
+}
+const DOT_SPACING = 16;
+
+/**
+ * Painter on a 2D canvas context. It maps semantic inks to theme colors; the context's transform
+ * is already set to circuit coordinates. Lines use round caps, as upstream.
+ */
+export class CanvasPainter implements Painter {
+  readonly ctx: CanvasRenderingContext2D;
+  palette: Palette;
+  settings: PaintSettings = { voltageColors: true, voltageRange: 5, dots: true };
+  /** The element being drawn is highlighted (selection color for its own parts). */
+  highlighted = false;
+  /** Highlight color: hover or selection. */
+  highlightColor: string;
+  private random: () => number;
+
+  constructor(ctx: CanvasRenderingContext2D, palette: Palette, random: () => number = Math.random) {
+    this.ctx = ctx;
+    this.palette = palette;
+    this.highlightColor = palette.hover;
+    this.random = random;
+  }
+
+  /** Resolve an ink to a fill or stroke style. */
+  style(ink: Ink): string | CanvasGradient {
+    const p = this.palette;
+    if ('role' in ink) {
+      if (this.highlighted && ink.role !== 'text' && ink.role !== 'currentDot')
+        return this.highlightColor;
+      return p.roles[ink.role];
+    }
+    if ('voltage' in ink) {
+      if (this.highlighted) return this.highlightColor;
+      if (!this.settings.voltageColors) return p.roles.component;
+      return p.voltage(ink.voltage, this.settings.voltageRange);
+    }
+    if ('gradient' in ink) {
+      if (this.highlighted) return this.highlightColor;
+      if (!this.settings.voltageColors) return p.roles.component;
+      const { from, to, v1, v2 } = ink.gradient;
+      const g = this.ctx.createLinearGradient(from.x, from.y, to.x, to.y);
+      g.addColorStop(0, p.voltage(v1, this.settings.voltageRange));
+      g.addColorStop(1, p.voltage(v2, this.settings.voltageRange));
+      return g;
+    }
+    if ('heat' in ink) {
+      if (this.highlighted) return this.highlightColor;
+      const { voltage, level } = ink.heat;
+      const base = this.settings.voltageColors
+        ? p.voltage(voltage, this.settings.voltageRange)
+        : p.roles.component;
+      // upstream turns white when blown; the label color stays visible on light themes
+      const c = heatColor(parseColor(base) ?? { r: 0, g: 0, b: 0, a: 1 }, level);
+      return c === null ? p.roles.label : toCss(c);
+    }
+    const [r, g, b] = ink.rgb;
+    return toCss({ r, g, b, a: 1 });
+  }
+
+  private stroke(ink: Ink, style: StrokeStyle | undefined): void {
+    const c = this.ctx;
+    c.strokeStyle = this.style(ink);
+    c.lineWidth =
+      ((style?.width ?? UPSTREAM_THICK) * this.palette.theme.style.strokeWidth) / UPSTREAM_THICK;
+    c.setLineDash(style?.dash ? [...style.dash] : []);
+    c.stroke();
+  }
+
+  line(a: Pt, b: Pt, ink: Ink, style?: StrokeStyle): void {
+    const c = this.ctx;
+    c.beginPath();
+    c.moveTo(a.x, a.y);
+    c.lineTo(b.x, b.y);
+    this.stroke(ink, style);
+  }
+
+  polyline(
+    points: readonly Pt[],
+    ink: Ink,
+    style?: StrokeStyle & { readonly closed?: boolean },
+  ): void {
+    if (points.length === 0) return;
+    const c = this.ctx;
+    c.beginPath();
+    points.forEach((q, i) => (i === 0 ? c.moveTo(q.x, q.y) : c.lineTo(q.x, q.y)));
+    if (style?.closed) c.closePath();
+    this.stroke(ink, style);
+  }
+
+  fillPolygon(points: readonly Pt[], ink: Ink, opacity = 1): void {
+    if (points.length === 0) return;
+    const c = this.ctx;
+    c.beginPath();
+    points.forEach((q, i) => (i === 0 ? c.moveTo(q.x, q.y) : c.lineTo(q.x, q.y)));
+    c.closePath();
+    c.fillStyle = this.style(ink);
+    if (opacity < 1) {
+      const alpha = c.globalAlpha;
+      c.globalAlpha = alpha * opacity;
+      c.fill();
+      c.globalAlpha = alpha;
+    } else c.fill();
+  }
+
+  circle(center: Pt, r: number, ink: Ink, style?: StrokeStyle): void {
+    const c = this.ctx;
+    c.beginPath();
+    c.arc(center.x, center.y, r, 0, 2 * Math.PI);
+    this.stroke(ink, style);
+  }
+
+  fillCircle(center: Pt, r: number, ink: Ink): void {
+    const c = this.ctx;
+    c.beginPath();
+    c.arc(center.x, center.y, r, 0, 2 * Math.PI);
+    c.closePath();
+    c.fillStyle = this.style(ink);
+    c.fill();
+  }
+
+  private font(style?: TextStyle): string {
+    const size = this.fontSize(style);
+    const { font, monoFont } = this.palette.theme.style;
+    const family =
+      style?.font === 'value' ? monoFont : style?.font === 'serif' ? 'Georgia, serif' : font;
+    return `${style?.italic ? 'italic ' : ''}${style?.bold ? 'bold ' : ''}${size}px ${family}`;
+  }
+
+  fontSize(style?: TextStyle): number {
+    // component values (the value font at its default size) follow the user's value size
+    if (style?.font === 'value' && style.size === undefined)
+      return 12 * (this.settings.valueScale ?? 1);
+    return style?.size ?? 12;
+  }
+
+  measureText(s: string, style?: TextStyle): number {
+    this.ctx.font = this.font(style);
+    return this.ctx.measureText(s).width;
+  }
+
+  text(s: string, at: Pt, ink: Ink, style?: TextStyle): void {
+    const c = this.ctx;
+    c.font = this.font(style);
+    c.fillStyle = this.style(ink);
+    c.textAlign = style?.align ?? 'left';
+    c.textBaseline = style?.baseline ?? 'alphabetic';
+    if (style?.rotate) {
+      c.save();
+      c.translate(at.x, at.y);
+      c.rotate(style.rotate);
+      c.fillText(s, 0, 0);
+      c.restore();
+    } else c.fillText(s, at.x, at.y);
+  }
+
+  measureMath(tex: string, size: number): MathBox | null {
+    const l = layoutMath(tex);
+    if (l === null) return null;
+    const k = size / 1000;
+    return { width: l.width * k, height: l.height * k, depth: l.depth * k, error: l.error };
+  }
+
+  math(tex: string, at: Pt, ink: Ink, size: number): MathBox | null {
+    const l = layoutMath(tex);
+    if (l === null) return null;
+    const k = size / 1000;
+    if (l.error === null) {
+      const c = this.ctx;
+      c.save();
+      c.translate(at.x, at.y);
+      c.scale(k, k);
+      const style = this.style(ink);
+      c.fillStyle = style;
+      c.strokeStyle = style;
+      drawMathOps(c, l.ops);
+      c.restore();
+    }
+    return { width: l.width * k, height: l.height * k, depth: l.depth * k, error: l.error };
+  }
+
+  dots(a: Pt, b: Pt, pos: number): void {
+    if (!this.settings.dots || pos === 0 || !Number.isFinite(pos)) return;
+    const c = this.ctx;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const dn = Math.sqrt(dx * dx + dy * dy);
+    const color = this.palette.roles.currentDot;
+    if (pos === CURRENT_TOO_FAST || pos === -CURRENT_TOO_FAST) {
+      // too fast to animate: a translucent line, dots at a random phase
+      c.save();
+      c.globalAlpha = 0.5;
+      c.strokeStyle = color;
+      c.lineWidth = 4;
+      c.setLineDash([]);
+      c.beginPath();
+      c.moveTo(a.x, a.y);
+      c.lineTo(b.x, b.y);
+      c.stroke();
+      c.restore();
+      pos = this.settings.running === false ? DOT_SPACING / 2 : this.random() * DOT_SPACING;
+    }
+    pos %= DOT_SPACING;
+    if (pos < 0) pos += DOT_SPACING;
+    const r = this.palette.theme.style.dotRadius;
+    c.fillStyle = color;
+    for (let di = pos; di < dn; di += DOT_SPACING) {
+      const x0 = Math.trunc(a.x + (di * dx) / dn);
+      const y0 = Math.trunc(a.y + (di * dy) / dn);
+      c.fillRect(x0 - r, y0 - r, 2 * r, 2 * r);
+    }
+  }
+}
