@@ -33,6 +33,7 @@ import { promptInstall } from '../pwa.ts';
 import { t, resolveLanguage, setLanguage } from '../i18n.ts';
 import { VISUALIZATIONS } from '../visualizations.ts';
 import { LANGUAGES } from '@perun/elements';
+import { platform } from '../platform/index.ts';
 
 const FIRST_PALETTE_THEME = 'nord';
 
@@ -564,6 +565,16 @@ export function AppBar() {
             onCheckedChange={(v) => updateSettings({ showOhm: v })}
           />
           <CheckItem
+            label="Tidy potentiometers"
+            icon="pot"
+            checked={settings.tidyPots}
+            onCheckedChange={(v) => updateSettings({ tidyPots: v })}
+            title={t(
+              'Values on the side away from the wiper, and an arrow that stays clear of the pins. Off: drawn as in CircuitJS',
+            )}
+            testId="menu-tidy-pots"
+          />
+          <CheckItem
             label="Junction dots"
             icon="junction"
             checked={settings.junctionDots}
@@ -722,7 +733,7 @@ export function AppBar() {
   );
 }
 
-const MOD = typeof navigator !== 'undefined' && /Mac|iP/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+const MOD = platform.apple ? '⌘' : 'Ctrl+';
 
 function Item(props: {
   label: string;
