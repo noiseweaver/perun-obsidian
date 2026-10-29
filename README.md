@@ -39,9 +39,8 @@ network.
 
 ## Install
 
-In Obsidian, Settings > Community plugins > Browse, search for Perun. Until it is listed there, use
-the [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin: Add beta plugin,
-`noiseweaver/perun-obsidian`.
+In Obsidian, open Settings > Community plugins > Browse, search for Perun, then Install and
+Enable. Or open [Perun in the plugin list](https://obsidian.md/plugins?id=perun) from a browser.
 
 ## About this repository
 
