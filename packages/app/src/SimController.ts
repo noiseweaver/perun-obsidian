@@ -109,6 +109,7 @@ import { t, tf } from './i18n.ts';
 import { platform } from './platform/index.ts';
 import { frameState } from './drawing.ts';
 import { StepClock } from './stepClock.ts';
+import { CardStack } from './cardStack.ts';
 
 /** What dropping a dragged docked scope does, as its drop label and undo name say. */
 const SCOPE_DROP_LABELS: Record<ScopeDrop, string> = {
@@ -218,6 +219,8 @@ export class SimController {
     to: Scope | null;
     where: ScopeDrop | null;
   } | null = null;
+  /** The order undocked scope cards are drawn in: a pressed card comes to the top. */
+  private readonly cardStack = new CardStack<ScopeElm>();
   /** Where each undocked scope's leader ends on screen, as last laid out. */
   private readonly leaderTargets = new WeakMap<ScopeElm, { x: number; y: number } | null>();
   /** Docked scope the context menu was opened on, or -1; and its selected plot. */
@@ -332,6 +335,7 @@ export class SimController {
     }
     if (undoable) history.begin('Open');
     else history.cancel();
+    this.cardStack.reset();
     // a circuit from My circuits says so after loading it (browserSaves.ts)
     useApp.setState({ savedAs: null });
     try {
@@ -532,6 +536,7 @@ export class SimController {
     ed.spliceOnDrop = s.spliceOnDrop;
     ed.smartGuides = s.smartGuides;
     ed.routeWires = s.routeWires;
+    ed.selectPlaced = s.editAfterPlace;
   }
 
   private onStore(s: AppState, prev: AppState): void {
@@ -790,6 +795,7 @@ export class SimController {
       circuitChanged: () => this.circuitChanged(),
       selectionChanged: () => this.publishEditor(),
       restore: (xml) => this.restore(xml),
+      notice: (text) => showToast(t(text)),
       placed: (className) => {
         notePlaced(className);
         // the panel opens over the next frames; check again once it has
@@ -926,7 +932,7 @@ export class SimController {
     const cards = mgr.look === 'cards';
     const ed = this.editor;
     const items: UndockedScopeItem[] = [];
-    for (const e of this.circuit.scopeElms()) {
+    for (const e of this.stackedScopeElms()) {
       const target = placeUndocked(e, vp, cards);
       const s = e.elmScope;
       s.canvasSelected = e.selected;
@@ -1013,10 +1019,23 @@ export class SimController {
     });
   }
 
+  /** Undocked scopes from the back card to the front one. */
+  private stackedScopeElms(): readonly ScopeElm[] {
+    return this.cardStack.arrange(this.circuit.scopeElms());
+  }
+
+  /** Bring the undocked card at a canvas point (or an undocked scope) to the top. */
+  private raiseCard(at: { x: number; y: number } | ScopeElm): void {
+    const e = at instanceof ScopeElm ? at : this.undockedAt(at.x, at.y);
+    if (e === null) return;
+    this.stackedScopeElms();
+    this.cardStack.raise(e);
+  }
+
   /** The undocked scope whose card is at a canvas point (the one drawn on top), or null. */
   undockedAt(x: number, y: number): ScopeElm | null {
     if (y >= this.circuitHeight()) return null;
-    const elms = this.circuit.scopeElms();
+    const elms = this.stackedScopeElms();
     for (let i = elms.length - 1; i >= 0; i--) {
       const e = elms[i];
       if (e === undefined) continue;
@@ -2482,6 +2501,10 @@ export class SimController {
       const rect = canvas.getBoundingClientRect();
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     };
+    // a finger picks parts and grabs wire ends further away than the mouse, the same distance
+    // on screen at any zoom
+    const reachFor = (e: PointerEvent): number =>
+      e.pointerType === 'touch' ? TOUCH_REACH / (this.renderer?.viewport.scale ?? 1) : 0;
     const grid = (p: { x: number; y: number }): { x: number; y: number } => {
       const r = this.renderer;
       const c = r ? r.viewport.toCircuit(p.x, p.y) : p;
@@ -2737,6 +2760,7 @@ export class SimController {
       const u = this.leaderAt(p.x, p.y, reach);
       if (u === null || this.undockedAt(p.x, p.y) !== null) return false;
       this.leaderDrag = { elm: u, x: p.x, y: p.y, id: e.pointerId };
+      this.raiseCard(u);
       if (ed.mouseElm !== null) ed.leave();
       try {
         canvas.setPointerCapture(e.pointerId);
@@ -2826,6 +2850,7 @@ export class SimController {
       if (e.pointerType === 'touch' || this.viewStack.length > 0) return;
       if (useApp.getState().teach.tool !== null) return;
       const p = local(e);
+      this.raiseCard(p);
       if (inScopes(p) || this.undockedAt(p.x, p.y) !== null) return;
       const g = grid(p);
       if (ed.pick(g.x, g.y).elm !== null || !useApp.getState().settings.quickPickWheel) return;
@@ -2847,6 +2872,8 @@ export class SimController {
       this.mouse = p;
       if (teachDown(e, p)) return;
       if (scopePinchDown(e, p)) return;
+      // a press on a card behind another brings it to the top
+      if (!(e.pointerType === 'touch' && touches.size > 0)) this.raiseCard(p);
       if (leaderDown(e, p)) return;
       if (
         !(e.pointerType === 'touch' && touches.size > 0) &&
@@ -2875,6 +2902,7 @@ export class SimController {
       if (e.button !== 0 && e.button !== 1) return;
       if (this.renderer) this.renderer.stopElm = null;
       const g = grid(p);
+      ed.touchReach = reachFor(e);
       const touchPan =
         e.pointerType === 'touch' &&
         ed.mouseMode === MouseMode.SELECT &&
@@ -2887,6 +2915,8 @@ export class SimController {
           ? 'pan'
           : ed.pointerDown(g.x, g.y, mods(e), e.button === 1 || touchPan);
       if (res === 'pan') pan = { x: p.x, y: p.y, id: e.pointerId };
+      // upstream's look picks an undocked scope as an element: the one picked comes to the top
+      if (ed.mouseElm instanceof ScopeElm) this.raiseCard(ed.mouseElm);
       gestureId = e.pointerId;
       try {
         canvas.setPointerCapture(e.pointerId);
@@ -2918,6 +2948,7 @@ export class SimController {
       if (useWheel.getState().wheel?.pointerId === e.pointerId) return;
       this.mouse = p;
       this.mouseType = e.pointerType;
+      if (!ed.isDragging) ed.touchReach = reachFor(e);
       if (teachMove(e, p)) return;
       if (split === e.pointerId) {
         const f = 1 - p.y / Math.max(1, this.cssHeight);
@@ -3558,6 +3589,8 @@ const COMPACT_WIDTH = 600;
 const LEADER_SNAP = 20;
 const LEADER_GRAB = 7;
 const LEADER_GRAB_TOUCH = 14;
+/** CSS pixels a touch reaches past a part to pick it, or from a wire's end to grab it. */
+const TOUCH_REACH = 20;
 /** Finger distance ratio for one time scale step in a scope pinch. */
 const PINCH_STEP = 1.4;
 

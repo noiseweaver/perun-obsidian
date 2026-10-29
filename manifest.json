@@ -1,7 +1,7 @@
 {
   "id": "perun",
   "name": "Perun",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "minAppVersion": "1.14.4",
   "description": "Run live circuit simulations in your notes and edit .circuit files in a full circuit editor. Based on Paul Falstad's CircuitJS.",
   "author": "Gadiel Zintu",
